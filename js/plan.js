@@ -1,5 +1,5 @@
 /* =============================================================================
- * plan.js  —  live STAIR FRAMING PLAN for the Steel Stair Estimator
+ * plan.js  —  live STAIR FRAMING PLAN for the Stair Budget Tool
  * =============================================================================
  *
  * WHAT THIS FILE DOES
@@ -221,7 +221,7 @@ function renderPlan(svgEl, state) {
   try {
     planRender(svgEl, state || {});
   } catch (err) {
-    // A drawing bug must never break the estimator: show a note instead.
+    // A drawing bug must never break the budget tool: show a note instead.
     try {
       if (typeof console !== 'undefined') console.warn('renderPlan:', err);
       planRenderError(svgEl);

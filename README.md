@@ -1,10 +1,12 @@
-# Steel Stair Estimator
+# Stair Budget Tool
 
 A single-page tool for pricing steel channel stairs. Pick the stair layout, stringer and
 landing channel sizes, and the number of treads, and the page draws a **live framing plan**
 and works out material and labour cost as you type.
 
-![Steel Stair Estimator screenshot](docs/screenshot.png)
+![Stair Budget Tool screenshot](docs/screenshot.png)
+
+**Live site:** https://lironson.github.io/stair-budget-tool/
 
 ## What it does
 

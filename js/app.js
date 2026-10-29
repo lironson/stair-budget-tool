@@ -1,11 +1,12 @@
 /*
- * app.js — wires the page together (Steel Stair Estimator)
+ * app.js — wires the page together (Stair Budget Tool)
  * ========================================================
  *
  * WHAT THIS FILE DOES
  *   1. Fills the three channel-section dropdowns (stringers, X landing beams,
  *      Y landing beams) from SECTIONS (+ "Custom…").
- *   2. Loads the last-used values from localStorage (key 'stairEstimator.v1'),
+ *   2. Loads the last-used values from localStorage (key 'stairBudgetTool.v1';
+ *      falls back to the pre-rename key 'stairEstimator.v1'),
  *      merged over DEFAULTS, and writes them into the form. Saves made before the
  *      landings had X and Y beams (keys landingSection, channelsPerLanding, …) are
  *      migrated onto the X beam keys (see LEGACY_KEYS). Saves made before schema 2
@@ -15,7 +16,7 @@
  *      table, redraws the plan with renderPlan(svg, state), refreshes the one-line
  *      summaries of the collapsible input sections and saves the state.
  *   4. Remembers which input sections (<details class="section">) each viewer has
- *      open or closed (localStorage key 'stairEstimator.sections').
+ *      open or closed (localStorage key 'stairBudgetTool.sections').
  *   5. Handles the Print, Reset and Dark mode controls.
  *
  * HOW IT CONNECTS TO THE OTHER FILES
@@ -60,7 +61,13 @@
   'use strict';
 
   /** localStorage key for the saved form values. */
-  const STORAGE_KEY = 'stairEstimator.v1';
+  const STORAGE_KEY = 'stairBudgetTool.v1';
+  /**
+   * Key used before the app was renamed (Steel Stair Estimator -> Stair Budget
+   * Tool). Read only when nothing is saved under STORAGE_KEY yet, so returning
+   * users keep their settings; new saves always go to STORAGE_KEY.
+   */
+  const OLD_STORAGE_KEY = 'stairEstimator.v1';
 
   /**
    * Version written with every save ({ ...state, schema: SAVE_SCHEMA }). Saves
@@ -76,7 +83,9 @@
   const OLD_DEFAULTS = { labourHours: 40, shopRate: 110, markupPct: 10 };
 
   /** localStorage key for which input sections are open: { 'sec-NAME': bool }. */
-  const SECTIONS_KEY = 'stairEstimator.sections';
+  const SECTIONS_KEY = 'stairBudgetTool.sections';
+  /** Pre-rename key for the open/closed sections, read as a fallback. */
+  const OLD_SECTIONS_KEY = 'stairEstimator.sections';
 
   /** localStorage key for the theme; shared with the Steel Size Rolodex app. */
   const THEME_KEY = 'theme';
@@ -293,7 +302,7 @@
    * @returns {object} a complete state object (DEFAULTS keys only)
    */
   function loadState() {
-    const raw = storageGet(STORAGE_KEY);
+    const raw = storageGet(STORAGE_KEY) || storageGet(OLD_STORAGE_KEY);
     const state = Object.assign({}, DEFAULTS);
     if (raw && typeof raw === 'object') {
       const m = migrateSaved(raw);
@@ -614,7 +623,7 @@
    */
   function initSections() {
     const sections = Array.prototype.slice.call(document.querySelectorAll('details.section'));
-    const saved = storageGet(SECTIONS_KEY);
+    const saved = storageGet(SECTIONS_KEY) || storageGet(OLD_SECTIONS_KEY);
     if (saved && typeof saved === 'object') {
       sections.forEach(function (d) {
         if (typeof saved[d.id] === 'boolean') d.open = saved[d.id];

@@ -1,5 +1,5 @@
 /*
- * calc.js — the numbers behind the Steel Stair Estimator
+ * calc.js — the numbers behind the Stair Budget Tool
  * =======================================================
  *
  * WHAT THIS FILE DOES

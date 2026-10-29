@@ -1,6 +1,6 @@
 # Architecture & editing guide
 
-The Steel Stair Estimator is a static page: one HTML file, one stylesheet and three
+The Stair Budget Tool is a static page: one HTML file, one stylesheet and three
 plain JavaScript files. There is no build step, no framework and no dependency. All
 scripts are **classic scripts** (not ES modules) so the page also works when
 `index.html` is opened straight from disk (`file://`).
@@ -223,7 +223,7 @@ heading. Order and ids:
 
 Summary span ids are `sum-layout`, `sum-stringers`, … (same suffix as the section id).
 All sections start open; each viewer's open/closed state is remembered in
-`localStorage['stairEstimator.sections']` (an object `{ sectionId: bool }`).
+`localStorage['stairBudgetTool.sections']` (an object `{ sectionId: bool }`).
 
 ### Saved state, schema 2
 
@@ -242,7 +242,8 @@ Estimate table rows for the landing: **"Landing beams — X (across)"** and
 After the Labour row come **"Detailing"** (detail line "Shop drawings — lump sum") and
 **"Installation"** (detail line "Erection — lump sum"), each with only a Cost value.
 
-`app.js` saves `state` to `localStorage['stairEstimator.v1']` (wrapped in try/catch) and
+`app.js` saves `state` to `localStorage['stairBudgetTool.v1']` (wrapped in try/catch; falls back to the
+pre-rename key `stairEstimator.v1` when nothing is saved yet) and
 merges the saved values over `DEFAULTS` on load.
 
 ---
