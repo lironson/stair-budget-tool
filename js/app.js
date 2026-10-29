@@ -520,7 +520,9 @@
       { name: 'Installation', detail: 'Erection — lump sum', cost: fmtMoney(c.installation) },
       { name: 'Subtotal', cost: fmtMoney(c.subtotal), className: 'row-sub' },
       { name: 'Markup', qty: fmtQty(state.markupPct) + '%', cost: fmtMoney(c.markup) },
-      { name: 'Total', cost: fmtMoney(c.total), className: 'row-total' },
+      // PST is charged on materials only (steel + treads), after markup.
+      { name: 'PST', detail: 'On materials: steel + treads', qty: fmtQty(state.pstPct) + '%', cost: fmtMoney(c.pst) },
+      { name: 'Total', detail: 'GST excluded', cost: fmtMoney(c.total), className: 'row-total' },
     ];
 
     const tbody = $('results');
@@ -602,6 +604,7 @@
     installation: function (s) { return fmtMoney(s.installationCost); },
     // "0%"
     markup: function (s) { return fmtQty(s.markupPct) + '%'; },
+    pst: function (s) { return fmtQty(s.pstPct) + '% on materials'; },
   };
 
   /**

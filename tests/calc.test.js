@@ -64,7 +64,8 @@ test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
   const labour = 52 * 100;                    // default standard hours x $100/hr
   const subtotal = steel + treads + labour;   // detailing and installation default to 0
   const markup = 0;                           // default markup 0%
-  const total = subtotal + markup;
+  const pst = (steel + treads) * 0.07;        // 7% PST on materials only
+  const total = subtotal + markup + pst;
 
   assert.equal(r.flights.length, 2);
   assert.equal(r.totalTreads, 20);
@@ -82,14 +83,15 @@ test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
   near(r.baseSteelLb, base, 1e-9);
   near(r.allowanceLb, allowance, 1e-9);
   near(r.totalSteelLb, totalLb, 1e-9);
-  near(r.costs.steel, steel, 1e-6);
+  near(r.costs.steel, steel, 0.011);
   near(r.costs.treads, treads, 1e-9);
   near(r.costs.labour, labour, 1e-9);
   assert.equal(r.costs.detailing, 0);
   assert.equal(r.costs.installation, 0);
-  near(r.costs.subtotal, subtotal, 1e-6);
-  near(r.costs.markup, markup, 1e-6);
-  near(r.costs.total, total, 1e-6);
+  near(r.costs.subtotal, subtotal, 0.011);
+  near(r.costs.markup, markup, 0.011);
+  near(r.costs.pst, pst, 0.011);
+  near(r.costs.total, total, 0.011);
   assert.deepEqual(r.warnings, []);
 });
 
@@ -100,10 +102,11 @@ test('DEFAULTS: new cost keys and example rates', () => {
   assert.equal(DEFAULTS.markupPct, 0);
   assert.equal(DEFAULTS.detailingCost, 0);
   assert.equal(DEFAULTS.installationCost, 0);
-  // labourHours sits next to shopRate; the lump sums sit between shopRate and markupPct.
+  assert.equal(DEFAULTS.pstPct, 7);
+  // labourHours sits next to shopRate; the lump sums sit between shopRate and markupPct; PST last.
   const keys = Object.keys(DEFAULTS);
   assert.deepEqual(keys.slice(keys.indexOf('labourHours')),
-    ['labourHours', 'shopRate', 'detailingCost', 'installationCost', 'markupPct']);
+    ['labourHours', 'shopRate', 'detailingCost', 'installationCost', 'markupPct', 'pstPct']);
 });
 
 test('standardLabourHours: straight stair, 4 stringers, 12 treads, 1 landing of 2 X beams', () => {
@@ -138,16 +141,16 @@ test('detailing and installation lump sums go into the subtotal before markup', 
   const withLs = computeEstimate({ ...DEFAULTS, markupPct: 0, detailingCost: 1200, installationCost: 3500 });
   assert.equal(withLs.costs.detailing, 1200);
   assert.equal(withLs.costs.installation, 3500);
-  near(withLs.costs.subtotal - base.costs.subtotal, 4700, 1e-6);
-  near(withLs.costs.total - base.costs.total, 4700, 1e-6);
+  near(withLs.costs.subtotal - base.costs.subtotal, 4700, 0.011);
+  near(withLs.costs.total - base.costs.total, 4700, 0.011);
   near(withLs.costs.subtotal,
-    withLs.costs.steel + withLs.costs.treads + withLs.costs.labour + 1200 + 3500, 1e-6);
+    withLs.costs.steel + withLs.costs.treads + withLs.costs.labour + 1200 + 3500, 0.011);
 
   const base10 = computeEstimate({ ...DEFAULTS, markupPct: 10 });
   const withLs10 = computeEstimate({ ...DEFAULTS, markupPct: 10, detailingCost: 1200, installationCost: 3500 });
-  near(withLs10.costs.subtotal - base10.costs.subtotal, 4700, 1e-6);
-  near(withLs10.costs.markup - base10.costs.markup, 470, 1e-6);
-  near(withLs10.costs.total - base10.costs.total, 4700 * 1.1, 1e-6);
+  near(withLs10.costs.subtotal - base10.costs.subtotal, 4700, 0.011);
+  near(withLs10.costs.markup - base10.costs.markup, 470, 0.011);
+  near(withLs10.costs.total - base10.costs.total, 4700 * 1.1, 0.011);
   // Form text works too.
   const txt = computeEstimate({ ...DEFAULTS, detailingCost: '1200', installationCost: '3500' });
   assert.equal(txt.costs.detailing, 1200);
@@ -397,4 +400,24 @@ test('fmtMoney and fmtNum', () => {
   assert.equal(fmtNum(909.27, 1), '909.3');
   assert.equal(fmtNum(NaN), '0');
   assert.equal(fmtNum(-0.2), '0');
+});
+
+test('money lines are rounded to the cent and add up exactly', () => {
+  const r = computeEstimate(DEFAULTS);
+  const c = r.costs;
+  for (const k of Object.keys(c)) assert.equal(Math.round(c[k] * 100) / 100, c[k], k + ' is whole cents');
+  assert.equal(Math.round((c.steel + c.treads + c.labour + c.detailing + c.installation) * 100), Math.round(c.subtotal * 100));
+  assert.equal(Math.round((c.subtotal + c.markup + c.pst) * 100), Math.round(c.total * 100));
+});
+
+test('PST: charged on materials only (steel + treads), after markup', () => {
+  const r = computeEstimate({ ...DEFAULTS, markupPct: 10, detailingCost: 1200, installationCost: 3500 });
+  near(r.costs.pst, (r.costs.steel + r.costs.treads) * 0.07, 0.011);
+  near(r.costs.total, r.costs.subtotal + r.costs.markup + r.costs.pst, 0.011);
+  // Labour, detailing, installation and markup do not change the PST.
+  const more = computeEstimate({ ...DEFAULTS, markupPct: 25, labourHours: 200, detailingCost: 9999, installationCost: 5000 });
+  near(more.costs.pst, r.costs.pst, 0.011);
+  // 0% and garbage give no tax and no NaN.
+  assert.equal(computeEstimate({ ...DEFAULTS, pstPct: 0 }).costs.pst, 0);
+  assert.equal(computeEstimate({ ...DEFAULTS, pstPct: 'abc' }).costs.pst, 0);
 });

@@ -472,6 +472,28 @@
             </div>
           </fieldset>
         </details>
+
+        <!-- --- PST: provincial sales tax on materials (steel + treads) only; GST excluded --- -->
+        <details class="section" id="sec-pst" open>
+          <summary>
+            <span class="section-title">PST</span>
+            <span class="section-sum" id="sum-pst"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">PST</legend>
+            <div class="fields">
+              <div class="field">
+                <label for="pstPct">PST</label>
+                <div class="input-unit">
+                  <input id="pstPct" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-pstPct">
+                  <span class="unit">%</span>
+                </div>
+                <p class="hint" id="hint-pstPct">On materials only (steel + treads). GST excluded.</p>
+              </div>
+            </div>
+          </fieldset>
+        </details>
       </form>
 
       <!-- ===== OUTPUT (right column on desktop): plan sheet, then estimate =====
@@ -520,7 +542,7 @@
             </table>
           </div>
 
-          <p class="note">Rates and allowances are example values — replace them with your own shop's numbers.</p>
+          <p class="note">Rates and allowances are example values — replace them with your own shop's numbers. Prices exclude GST.</p>
         </section>
       </div>
     </main>

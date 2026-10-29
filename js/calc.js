@@ -45,6 +45,8 @@
  *     After that labourHours is a plain number the user edits.
  *   - Detailing (shop drawings) and installation (erection) are each one lump sum in
  *     dollars (detailingCost, installationCost), added to the subtotal before markup.
+ *   - PST: pstPct (default 7, BC) is charged on materials only (steel + treads) and
+ *     added after markup. GST is not included anywhere.
  *   - Add a cost line (e.g. galvanizing):
  *       1. add a key to DEFAULTS (and an <input> with the same id in index.html),
  *       2. compute it in computeEstimate() in the "Costs" step and add it to `costs`
@@ -129,7 +131,19 @@ const DEFAULTS = {
   detailingCost: 0,            // $ lump sum — detailing / shop drawings
   installationCost: 0,         // $ lump sum — installation / erection
   markupPct: 0,                // % applied to the subtotal
+  pstPct: 7,                   // % PST (BC rate), charged on materials only: steel + treads
 };
+
+/**
+ * Round a dollar amount to the nearest cent (also clears floating-point noise
+ * such as 0.1 + 0.2 = 0.30000000000000004).
+ *
+ * @param {number} v  dollars
+ * @returns {number} dollars, to 2 decimals
+ */
+function calcCents(v) {
+  return Math.round((v + Number.EPSILON) * 100) / 100;
+}
 
 /**
  * Turn any form value into a safe, non-negative number.
@@ -270,8 +284,9 @@ DEFAULTS.labourHours = standardLabourHours(DEFAULTS);
  *   beamsX         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (X landing beams)
  *   beamsY         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (Y landing beams)
  *   baseSteelLb, allowanceLb, totalSteelLb  (lb)
- *   costs          { steel, treads, labour, detailing, installation, subtotal, markup, total }  ($)
- *                  detailing / installation are the detailingCost / installationCost lump sums
+ *   costs          { steel, treads, labour, detailing, installation, subtotal, markup, pst, total }  ($)
+ *                  detailing / installation are the detailingCost / installationCost lump sums;
+ *                  pst = pstPct x (steel + treads), materials only; GST is not included
  *   warnings[]     short plain-English strings
  */
 function computeEstimate(state) {
@@ -356,15 +371,20 @@ function computeEstimate(state) {
   const totalSteelLb = baseSteelLb + allowanceLb;
 
   // ---- Costs ----
-  const steel = totalSteelLb * calcNum(s.pricePerLb);           // material: steel bought by the lb
-  const treadsCost = totalTreads * calcNum(s.pricePerTread);    // material: treads bought by the piece
-  const labour = calcNum(s.labourHours) * calcNum(s.shopRate);  // shop hours x hourly rate
-  const detailing = calcNum(s.detailingCost);                   // lump sum: shop drawings
-  const installation = calcNum(s.installationCost);             // lump sum: erection
-  const subtotal = steel + treadsCost + labour + detailing + installation;
-  const markup = (subtotal * calcNum(s.markupPct)) / 100;       // overhead / profit on top of cost
-  const total = subtotal + markup;
-  const costs = { steel, treads: treadsCost, labour, detailing, installation, subtotal, markup, total };
+  // Every money line is rounded to the cent BEFORE it is added up, so the printed
+  // lines always sum exactly to the printed subtotal and total.
+  const steel = calcCents(totalSteelLb * calcNum(s.pricePerLb));          // material: steel bought by the lb
+  const treadsCost = calcCents(totalTreads * calcNum(s.pricePerTread));   // material: treads bought by the piece
+  const labour = calcCents(calcNum(s.labourHours) * calcNum(s.shopRate)); // shop hours x hourly rate
+  const detailing = calcCents(calcNum(s.detailingCost));                  // lump sum: shop drawings
+  const installation = calcCents(calcNum(s.installationCost));            // lump sum: erection
+  const subtotal = calcCents(steel + treadsCost + labour + detailing + installation);
+  const markup = calcCents((subtotal * calcNum(s.markupPct)) / 100);      // overhead / profit on top of cost
+  // PST (provincial sales tax) on materials only: the steel and the treads. Labour,
+  // detailing, installation and markup are not taxed. GST is left out of the estimate.
+  const pst = calcCents(((steel + treadsCost) * calcNum(s.pstPct)) / 100);
+  const total = calcCents(subtotal + markup + pst);
+  const costs = { steel, treads: treadsCost, labour, detailing, installation, subtotal, markup, pst, total };
 
   // ---- Warnings (gentle checks, not a code review) ----
   // 7 3/4" is a common residential maximum and 7" a common commercial one; 7 7/8" is

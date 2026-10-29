@@ -24,6 +24,7 @@ and works out material and labour cost as you type.
 - **Detailing** and **Installation**: one lump-sum line each (shop drawings; erection crew,
   equipment and travel).
 - **Markup**: an optional % on the subtotal (0% to start).
+- **PST**: 7% (BC) on materials only, meaning the steel and treads. GST is not included.
 - **Collapsible sections**: each input group folds away and shows a one-line summary. Your
   browser remembers which ones you left open.
 - **One-page print**: *Print estimate* gives a single Letter page with the plan and the

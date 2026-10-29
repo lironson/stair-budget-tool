@@ -68,6 +68,7 @@ All lengths inside `state` and inside the calculations are **inches**. Weights a
 | `detailingCost` | number $ | `0` | detailing (shop drawings), one lump sum |
 | `installationCost` | number $ | `0` | installation (erection crew, equipment, travel), one lump sum |
 | `markupPct` | number % | `0` | applied to the subtotal |
+| `pstPct` | number % | `7` | PST (BC rate), charged on **materials only** (steel + treads), added after markup. GST is excluded |
 
 `DEFAULTS` (in `calc.js`) holds exactly these keys and values. The prices are
 **example rates**, not real quotes, and the page labels them that way.
@@ -120,7 +121,7 @@ dropdown option.
   baseSteelLb,                     // stringers.weightLb + beamsX.weightLb + beamsY.weightLb
   allowanceLb,                     // baseSteelLb x connectionAllowancePct / 100
   totalSteelLb,                    // baseSteelLb + allowanceLb
-  costs: { steel, treads, labour, detailing, installation, subtotal, markup, total },
+  costs: { steel, treads, labour, detailing, installation, subtotal, markup, pst, total },
   warnings: [ 'string', ... ]      // gentle checks, e.g. riser > 7 7/8", tread < 10", treads < 1
 }
 ```
@@ -133,7 +134,8 @@ Formulas:
   `costs.labour = labourHours × shopRate`, `costs.detailing = detailingCost`,
   `costs.installation = installationCost`,
   `subtotal = steel + treads + labour + detailing + installation`,
-  `markup = subtotal × markupPct / 100`, `total = subtotal + markup`
+  `markup = subtotal × markupPct / 100`, `pst = (steel + treads) × pstPct / 100`,
+  `total = subtotal + markup + pst` (GST excluded)
 
 Hand check: 19 treads @ 11", 7" risers, 2 × C12x20.7, 12" allowance →
 √(209² + 140²) = 251.56" + 12" = 263.56" = 21.96 ft; × 2 × 20.7 = **909.3 lb**.
@@ -220,6 +222,7 @@ heading. Order and ids:
 | `sec-detailing` | Detailing | e.g. `$1,200.00` |
 | `sec-installation` | Installation | e.g. `$3,500.00` |
 | `sec-markup` | Markup | e.g. `0%` |
+| `sec-pst` | PST | e.g. `7% on materials` |
 
 Summary span ids are `sum-layout`, `sum-stringers`, … (same suffix as the section id).
 All sections start open; each viewer's open/closed state is remembered in
