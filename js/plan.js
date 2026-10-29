@@ -71,6 +71,10 @@
  *   - Landing beam position: PLAN_BEAM_EDGE_INSET (first / last beam in from
  *     the landing edges; the same rule for X and Y, see planBeamPositions).
  *   - Text size / line weights: the PLAN_*_U and PLAN_TEXT_* constants.
+ *   - Label clearance: every piece of text is recorded in ctx.obstacles as it
+ *     is drawn, and leader labels slide along their column to avoid covering
+ *     or crossing it (planPlaceLabels). Tune with PLAN_OBSTACLE_PAD and
+ *     PLAN_LABEL_TRIES.
  *   - Add an orientation: write a planLayoutXxx(g) that returns the same model
  *     shape as the others (copy planLayoutL as a template), add it to
  *     planLayout(), add the name to PLAN_ORIENTATIONS, and add the <option> in
@@ -133,6 +137,8 @@ const PLAN_SCALE_SIZE = 0.8;         // "SCALE: NTS" size
 const PLAN_DIM_OFFSET = 2.1;         // stair edge -> dimension line
 const PLAN_LABEL_GAP = 1.6;          // outermost dimension -> label column
 const PLAN_LEADER_SHOULDER = 1.0;    // horizontal stub on each leader
+const PLAN_OBSTACLE_PAD = 0.3;       // clear space kept around text a label steers past
+const PLAN_LABEL_TRIES = 12;         // half-line steps a label may slide up / down
 const PLAN_ARROW_LEN = 0.75;         // leader / UP arrowhead length
 const PLAN_MARGIN = 1.6;             // empty margin around the whole drawing
 const PLAN_KEY_LEN = 2.2;            // axis key arrow length
@@ -250,6 +256,7 @@ function planRender(svgEl, state) {
     fs: u * PLAN_FONT_U,                    // font size in inches
     ext: { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity },
     labels: [],                             // leader labels, placed at the end
+    obstacles: [],                          // text boxes labels must steer around
     g: g,
   };
 
@@ -915,16 +922,28 @@ function planDrawUpArrow(ctx, f) {
   if (!(f.run > 0)) return;
   const fs = ctx.fs;
   const pos = planStringerPositions(ctx, f);
-  // Lane across the flight.
+  // Lane across the flight, and the clear width of the bay it runs in
+  // (between the stringers either side, less one steel stroke).
   let lane = f.width / 2;
-  if (pos.inner.length) lane = (pos.outer[0] + pos.inner[0]) / 2;
+  let bay = pos.outer[1] - pos.outer[0];
+  if (pos.inner.length) {
+    lane = (pos.outer[0] + pos.inner[0]) / 2;
+    bay = pos.inner[0] - pos.outer[0];
+  }
+  bay -= ctx.u * PLAN_STEEL_U;
+  // A bay narrower than the arrowhead: no arrow at all (very narrow stair at a
+  // small drawing scale), rather than an arrow drawn over the stringers.
+  if (bay < 0.6 * fs) return;
 
   // Along the flight: "UP" text, then the arrow up to 85% of the run.
   const textS = f.run * 0.06 + 0.7 * fs;
   let a0 = textS + (planIsVertical(f) ? 0.9 : 1.2) * fs;
   let a1 = Math.max(a0 + 1.5 * fs, f.run * 0.85);
-  const showText = a1 <= f.run * 0.95;
-  if (!showText) { a0 = f.run * 0.15; a1 = f.run * 0.85; }  // too short: arrow only
+  // The text must also fit ACROSS the flight: on an up/down flight that is
+  // the word's width, on a sideways flight its cap height.
+  const across = planIsVertical(f) ? planTextW(PLAN_TEXT.up, fs) : PLAN_CAP_H * fs;
+  const showText = a1 <= f.run * 0.95 && across + 0.4 * fs <= bay;
+  if (!showText) { a0 = f.run * 0.15; a1 = f.run * 0.85; }  // no room for text: arrow only
 
   const p0 = planFP(f, a0, lane), p1 = planFP(f, a1, lane);
   const hl = Math.min(PLAN_ARROW_LEN * fs, (a1 - a0) * 0.4);
@@ -1153,6 +1172,12 @@ function planQueueLabel(ctx, text, ax, ay, side, prefY) {
  * extents, stacked top to bottom without overlapping, each with a leader
  * (short horizontal shoulder, then straight to the arrow tip).
  *
+ * Labels also steer around text that is already on the sheet (dimension
+ * strings, "UP", earlier labels; see ctx.obstacles). If a label's text or its
+ * leader would cover or cross one, the label slides up or down its column in
+ * half-line steps to the nearest clear spot, without jumping over the label
+ * above it. When nothing nearby is clear it stays where it was.
+ *
  * @param {object} ctx
  */
 function planPlaceLabels(ctx) {
@@ -1171,9 +1196,53 @@ function planPlaceLabels(ctx) {
       const above = (n - 1) * lh + 0.6 * fs, below = 0.55 * fs;
       let y = l.prefY;
       if (y - above < prevBottom + 0.5 * fs) y = prevBottom + 0.5 * fs + above;
+      const minY = prevBottom + 0.5 * fs + above;          // keep below the label above
+      // Try y, then y +/- half a line, +/- a line, ... and take the first clear spot.
+      const step = lh / 2;
+      for (let k = 0; k <= PLAN_LABEL_TRIES; k++) {
+        const tries = k === 0 ? [y] : [y + k * step, y - k * step];
+        const hit = tries.find(function (cy) {
+          return cy >= minY - 1e-9 && !planLabelBlocked(ctx, l, colX[side], cy, side);
+        });
+        if (hit !== undefined) { y = hit; break; }
+      }
       prevBottom = y + below;
       planDrawLabel(ctx, l, colX[side], y, side);
     });
+  });
+}
+
+/**
+ * Would this label, drawn at column x / last-line y, cover or cross any text
+ * already on the sheet? Checks every text line of the label and both leader
+ * segments (shoulder, then the run to the arrow tip) against ctx.obstacles,
+ * each obstacle padded by PLAN_OBSTACLE_PAD x font size.
+ * Geometry matches planDrawLabel.
+ *
+ * @param {object} ctx
+ * @param {object} l      queued label
+ * @param {number} x      column x
+ * @param {number} y      middle of the last text line
+ * @param {string} side   'left' | 'right'
+ * @returns {boolean}
+ */
+function planLabelBlocked(ctx, l, x, y, side) {
+  const fs = ctx.fs, lh = PLAN_TEXT_LINE * fs, n = l.lines.length, pad = PLAN_OBSTACLE_PAD * fs;
+  const inward = side === 'left' ? 1 : -1;
+  // The label's own text lines.
+  const boxes = l.lines.map(function (line, i) {
+    const w = planTextW(line, fs), base = y + 0.35 * fs - (n - 1 - i) * lh;
+    const xa = side === 'left' ? x - w : x;
+    return { x0: xa, y0: base - PLAN_CAP_H * fs, x1: xa + w, y1: base + 0.25 * fs };
+  });
+  // Its leader: shoulder from the text, then straight to the arrow tip.
+  const sx = x + inward * 0.4 * fs;
+  const kx = sx + inward * PLAN_LEADER_SHOULDER * fs;
+  const segs = [[sx, y, kx, y], [kx, y, l.ax, l.ay]];
+  return ctx.obstacles.some(function (o) {
+    const b = { x0: o.x0 - pad, y0: o.y0 - pad, x1: o.x1 + pad, y1: o.y1 + pad };
+    return boxes.some(function (bx) { return planBoxesHit(bx, b); }) ||
+      segs.some(function (s) { return planSegHitsBox(s[0], s[1], s[2], s[3], b); });
   });
 }
 
@@ -1384,13 +1453,69 @@ function planText(ctx, x, y, str, size, anchor, opt) {
   // Extents estimate: width along the baseline, cap height above it.
   const w = planTextW(str, size, !!opt.dim) * (opt.title ? 1.06 : 1);
   const a0 = anchor === 'start' ? 0 : anchor === 'end' ? -w : -w / 2;
+  let box;
   if (opt.rotate) {
-    planExt(ctx, x - size * PLAN_CAP_H, y - a0 - w);
-    planExt(ctx, x + size * 0.25, y - a0);
+    box = [x - size * PLAN_CAP_H, y - a0 - w, x + size * 0.25, y - a0];
   } else {
-    planExt(ctx, x + a0, y - size * PLAN_CAP_H);
-    planExt(ctx, x + a0 + w, y + size * 0.25);
+    box = [x + a0, y - size * PLAN_CAP_H, x + a0 + w, y + size * 0.25];
   }
+  planExt(ctx, box[0], box[1]);
+  planExt(ctx, box[2], box[3]);
+  // Remember where the text is, so leader labels placed later steer around it
+  // (dimension text, "UP", and each label once it is drawn).
+  planAddObstacle(ctx, box[0], box[1], box[2], box[3]);
+}
+
+/**
+ * Record a rectangle that leader labels must not cover or cross.
+ *
+ * @param {object} ctx
+ * @param {number} x0  left (in)
+ * @param {number} y0  top (in)
+ * @param {number} x1  right (in)
+ * @param {number} y1  bottom (in)
+ */
+function planAddObstacle(ctx, x0, y0, x1, y1) {
+  if (!ctx.obstacles) return;
+  if (![x0, y0, x1, y1].every(isFinite)) return;
+  ctx.obstacles.push({ x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) });
+}
+
+/**
+ * True when the segment (ax, ay) -> (bx, by) passes through the box
+ * (Liang-Barsky clipping: shrink the segment's 0..1 range against each edge).
+ *
+ * @param {number} ax
+ * @param {number} ay
+ * @param {number} bx
+ * @param {number} by
+ * @param {{x0:number,y0:number,x1:number,y1:number}} b
+ * @returns {boolean}
+ */
+function planSegHitsBox(ax, ay, bx, by, b) {
+  const dx = bx - ax, dy = by - ay;
+  let t0 = 0, t1 = 1;
+  // Each pair is (p, q) for one edge: the segment is inside where p*t <= q.
+  const edges = [[-dx, ax - b.x0], [dx, b.x1 - ax], [-dy, ay - b.y0], [dy, b.y1 - ay]];
+  for (let i = 0; i < 4; i++) {
+    const p = edges[i][0], q = edges[i][1];
+    if (p === 0) { if (q < 0) return false; continue; }    // parallel and outside
+    const r = q / p;
+    if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+    else { if (r < t0) return false; if (r < t1) t1 = r; }
+  }
+  return t0 <= t1;
+}
+
+/**
+ * True when two boxes overlap.
+ *
+ * @param {{x0:number,y0:number,x1:number,y1:number}} a
+ * @param {{x0:number,y0:number,x1:number,y1:number}} b
+ * @returns {boolean}
+ */
+function planBoxesHit(a, b) {
+  return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 }
 
 /**
