@@ -324,3 +324,13 @@ just the main width when the upper view is hidden). The CSS turns those into siz
 Print must not depend on the screen width (iPhone Safari): `@media print` undoes every
 phone-width screen rule, uses inch sizes, and keeps the printed content within an
 **8.6in** height budget (Safari adds its own margins, header and footer).
+
+## Releasing (cache busting)
+
+GitHub Pages lets browsers cache `css/styles.css`, the scripts and images for a while.
+iPhone Safari once combined a new `index.html` with an old cached `styles.css`, which broke
+the printout. So `index.html` loads every asset with a version query (`styles.css?v=…`,
+`calc.js?v=…`, …). **On every release, change all the `?v=` values in `index.html`** (any
+new value, e.g. the date plus a counter). The logo's screen/print rules are also repeated
+in a small `<style>` block in `index.html`, so the logo prints correctly even with a stale
+stylesheet.

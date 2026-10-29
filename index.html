@@ -78,7 +78,20 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&amp;family=Barlow:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
-  <link rel="stylesheet" href="css/styles.css">
+  <!-- ASSET VERSION: every ?v= below must be bumped on each release (any new value works).
+       GitHub Pages lets browsers cache styles.css and the scripts, and iPhone Safari kept an
+       old styles.css next to a new index.html, which broke the printout. Changing ?v= makes
+       every browser fetch fresh copies. -->
+  <link rel="stylesheet" href="css/styles.css?v=20261029-2">
+  <!-- Logo rules kept in the page itself, so they apply even if a stale stylesheet is
+       cached: screen shows the .logo mask, print shows the black .logo-print image. -->
+  <style>
+    .logo-print { display: none; }
+    @media print {
+      .logo { display: none !important; }
+      .logo-print { display: block !important; flex: none; width: 0.9in; height: 0.45in; object-fit: contain; }
+    }
+  </style>
 </head>
 <body>
   <div class="page">
@@ -88,7 +101,7 @@
       <div class="logo" role="img" aria-label="Grizzly Metal Fabrication"></div>
       <!-- Print-only logo: black on transparent. Safari doesn't print CSS masks, so
            paper uses this <img>; on screen it is hidden. -->
-      <img class="logo-print" src="assets/grizzly-logo-print.png" alt="Grizzly Metal Fabrication">
+      <img class="logo-print" src="assets/grizzly-logo-print.png?v=20261029-2" width="86" height="43" alt="Grizzly Metal Fabrication">
       <div class="brand-rule" aria-hidden="true"></div>
       <div class="brand-text">
         <h1>Stair Budget Tool<i>.</i></h1>
@@ -653,8 +666,8 @@
   </div>
 
   <!-- ===== SCRIPTS: classic scripts, this order (calc → plan → app) ===== -->
-  <script src="js/calc.js"></script>
-  <script src="js/plan.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/calc.js?v=20261029-2"></script>
+  <script src="js/plan.js?v=20261029-2"></script>
+  <script src="js/app.js?v=20261029-2"></script>
 </body>
 </html>
