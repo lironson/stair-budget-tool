@@ -24,8 +24,7 @@ and works out material and labour cost as you type.
   `js/calc.js`) and a $/ft rate, priced over the stringers and landing beams. The tread
   finish is part of the tread supply price.
 - **Landing deck**: a $/sq.ft rate priced on the landing area (all landings).
-- **Labour**: total shop hours × shop rate. The starting hours are a standard figure for
-  the default stair; type over them with your own.
+- **Labour**: total shop hours × shop rate.
 - **Detailing** and **Installation**: one lump-sum line each (shop drawings; erection crew,
   equipment and travel).
 - **Freight**: one lump-sum line.
@@ -41,7 +40,8 @@ and works out material and labour cost as you type.
   it, at the same scale: below the stair plan on screen, beside it on the printout.
 - Your last inputs and rates are remembered in the browser (localStorage).
 
-> The rates that ship with the page are **example values**. Replace them with your own.
+> On a first visit every $ rate and the shop hours start at **0**: enter your own. The
+> page remembers your last values in that browser.
 > This is a budget estimating tool, not an engineered design. Member sizes must be
 > confirmed by the engineer of record.
 

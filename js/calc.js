@@ -7,8 +7,7 @@
  *   and all the arithmetic: stair geometry, stringer and landing-beam weights (X beams
  *   across the stair, Y beams along it), the cost roll-up (steel, treads, shop labour,
  *   the detailing and installation lump sums, markup), and the warnings. It also
- *   works out the default shop hours (standardLabourHours()) and has the small
- *   formatters the page uses to show feet-inches, dollars and plain numbers.
+ *   has the small formatters the page uses to show feet-inches, dollars and plain numbers.
  *
  *   There is NO page / DOM code in here. It only takes numbers in and gives numbers
  *   back, so it can be tested on its own with `node --test tests/`.
@@ -47,11 +46,9 @@
  *       1. add it to normalizeOrientation() below (and an <option> in index.html),
  *       2. handle it in landingWidth() and in the flight count in stairCounts(),
  *       3. add a layout branch in js/plan.js.
- *   - Change the default values or example rates: edit DEFAULTS below. These are the
- *     values the page starts with and the "Reset" button goes back to.
- *   - The default labour hours are not typed into DEFAULTS: they are worked out once
- *     from the default stair by standardLabourHours() (see DEFAULTS.labourHours below).
- *     After that labourHours is a plain number the user edits.
+ *   - Change the starting values: edit DEFAULTS below. These are the values the page
+ *     starts with on a first visit and the "Reset" button goes back to. Every $ rate
+ *     and the shop hours start at 0, so a new user enters their own numbers.
  *   - Detailing (shop drawings) and installation (erection) are each one lump sum in
  *     dollars (detailingCost, installationCost), added to the subtotal before markup.
  *   - PST: pstPct (default 7, BC) is charged on materials only (steel + treads) and
@@ -105,7 +102,7 @@ const FINISHES = [
 
 /*
  * DEFAULTS — the starting value of every form field (same keys as the `state` object).
- * Lengths are inches. The prices are EXAMPLE RATES, not real quotes.
+ * Lengths are inches. Every $ rate and the shop hours start at 0 (the user enters their own).
  */
 const DEFAULTS = {
   // Layout
@@ -142,14 +139,14 @@ const DEFAULTS = {
   beamYLengthAuto: true,       // true = each Y beam is the landing depth
   beamYLengthOverride: 48,     // in, Y beam length when beamYLengthAuto is false
 
-  // Prices (example rates)
-  pricePerTread: 85,           // $ per tread (pan, grating, etc.)
-  pricePerLb: 1.6,             // $ per lb of channel steel
+  // Prices: all start at 0; the user enters their own
+  pricePerTread: 0,            // $ per tread (pan, grating, etc.)
+  pricePerLb: 0,               // $ per lb of channel steel
   connectionAllowancePct: 15,  // % extra steel weight for clips, plates, angles, bolts, welds
   finishType: 'SP3/Standard Primer', // a FINISHES name
   finishRatePerFt: 0,          // $ per ft of finished member (stringers + landing beams + treads)
-  labourHours: 0,              // total shop hours; set below from standardLabourHours(DEFAULTS)
-  shopRate: 100,               // $ per hour
+  labourHours: 0,              // total shop hours
+  shopRate: 0,                 // $ per hour
   detailingCost: 0,            // $ lump sum — detailing / shop drawings
   installationCost: 0,         // $ lump sum — installation / erection
   freightCost: 0,              // $ lump sum — freight / delivery
@@ -285,8 +282,7 @@ function landingBeamLength(state, axis) {
 
 /**
  * Count the pieces of a stair: flights, treads per flight, stringers and landing beams.
- * computeEstimate() and standardLabourHours() both use this, so they always count the
- * same way. Bad or missing inputs count as 0.
+ * computeEstimate() uses this. Bad or missing inputs count as 0.
  *
  * @param {object} state  the stair state
  * @returns {object} { flightCount, treadCounts[], stringersPerFlight, stringerCount,
@@ -312,26 +308,6 @@ function stairCounts(state) {
   };
 }
 
-// Internal pricing rule for the default shop hours. Do not show these rates on the page or in the docs.
-const LABOUR_STD = { perStringer: 6.5, perTread: 1, perBeam: 1.5 };
-
-/**
- * Standard shop hours for a stair, from its stringer, tread and landing-beam counts.
- * Used only to set DEFAULTS.labourHours. Never returns NaN; bad inputs count as 0.
- *
- * @param {object} state  the stair state
- * @returns {number} shop hours (>= 0)
- */
-function standardLabourHours(state) {
-  const c = stairCounts(state);
-  const treads = c.treadCounts.reduce((sum, t) => sum + t, 0);
-  return c.stringerCount * LABOUR_STD.perStringer
-    + treads * LABOUR_STD.perTread
-    + (c.beamXCount + c.beamYCount) * LABOUR_STD.perBeam;
-}
-
-// The default shop hours come from the default stair (worked out once, at load).
-DEFAULTS.labourHours = standardLabourHours(DEFAULTS);
 
 /**
  * Work out the full estimate: geometry, steel weights, costs and warnings.
@@ -568,4 +544,4 @@ function fmtNum(n, decimals = 0) {
   return text.replace(/^-(?=0(\.0+)?$)/, ''); // never show "-0"
 }
 
-if (typeof module !== 'undefined') module.exports = { SECTIONS, FINISHES, DEFAULTS, normalizeOrientation, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };
+if (typeof module !== 'undefined') module.exports = { SECTIONS, FINISHES, DEFAULTS, normalizeOrientation, sectionWeight, landingWidth, landingBeamLength, computeEstimate, fmtFtIn, fmtMoney, fmtNum };

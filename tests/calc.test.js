@@ -9,9 +9,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  SECTIONS, FINISHES, DEFAULTS, normalizeOrientation, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate,
+  SECTIONS, FINISHES, DEFAULTS, normalizeOrientation, sectionWeight, landingWidth, landingBeamLength, computeEstimate,
   fmtFtIn, fmtMoney, fmtNum,
 } = require('../js/calc.js');
+
+/**
+ * Example rates for the cost tests. DEFAULTS starts every $ rate and the shop hours at
+ * 0, so the tests price with these fixed numbers instead.
+ */
+const RATES = { pricePerTread: 85, pricePerLb: 1.6, shopRate: 100, labourHours: 52 };
+const BASE = { ...DEFAULTS, ...RATES };
 
 /** Assert that two numbers are within `tol` of each other. */
 function near(actual, expected, tol, msg) {
@@ -29,7 +36,7 @@ function assertAllFinite(value, path = 'result') {
 
 test('hand check from the contract: 19 treads @ 11", 7" riser, 2 x C12x20.7 -> ~909.3 lb', () => {
   const r = computeEstimate({
-    ...DEFAULTS, orientation: 'straight', treads1: 19, treadDepth: 11, riserHeight: 7,
+    ...BASE, orientation: 'straight', treads1: 19, treadDepth: 11, riserHeight: 7,
     stringerSection: 'C12x20.7', stringersPerFlight: 2, crankAllowance: 12,
   });
   assert.equal(r.flights.length, 1);
@@ -41,7 +48,7 @@ test('hand check from the contract: 19 treads @ 11", 7" riser, 2 x C12x20.7 -> ~
 });
 
 test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
-  const d = DEFAULTS;
+  const d = BASE;
   const r = computeEstimate(d);
 
   // Two flights of 10 treads, 11 risers each.
@@ -95,51 +102,29 @@ test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
   assert.deepEqual(r.warnings, []);
 });
 
-test('DEFAULTS: new cost keys and example rates', () => {
+test('DEFAULTS: every $ rate and the shop hours start at 0', () => {
   assert.equal(DEFAULTS.orientation, 'U');
-  assert.equal(DEFAULTS.labourHours, 52);
-  assert.equal(DEFAULTS.labourHours, standardLabourHours(DEFAULTS));
-  assert.equal(DEFAULTS.shopRate, 100);
-  assert.equal(DEFAULTS.markupPct, 0);
-  assert.equal(DEFAULTS.detailingCost, 0);
-  assert.equal(DEFAULTS.installationCost, 0);
+  for (const k of ['pricePerTread', 'pricePerLb', 'deckRatePerSqFt', 'finishRatePerFt', 'labourHours',
+    'shopRate', 'detailingCost', 'installationCost', 'freightCost', 'markupPct']) {
+    assert.equal(DEFAULTS[k], 0, k);
+  }
   assert.equal(DEFAULTS.pstPct, 7);
-  // labourHours sits next to shopRate; the lump sums sit between shopRate and markupPct; PST last.
+  assert.equal(DEFAULTS.connectionAllowancePct, 15);
+  // A first visit prices nothing until the user enters rates.
+  assert.equal(computeEstimate(DEFAULTS).costs.total, 0);
   const keys = Object.keys(DEFAULTS);
   assert.deepEqual(keys.slice(keys.indexOf('labourHours')),
     ['labourHours', 'shopRate', 'detailingCost', 'installationCost', 'freightCost', 'markupPct', 'pstPct']);
 });
 
-test('standardLabourHours: straight stair, 4 stringers, 12 treads, 1 landing of 2 X beams', () => {
-  const st = {
-    ...DEFAULTS, orientation: 'straight', stringersPerFlight: 4, treads1: 12, treads2: 99,
-    landingCount: 1, beamXCount: 2, beamYCount: 0,
-  };
-  near(standardLabourHours(st), 4 * 6.5 + 12 + 2 * 1.5, 1e-9); // 41
-  assert.equal(standardLabourHours(st), 41);
-});
-
-test('standardLabourHours: L-stair with 2 landings counts both flights and both landings', () => {
-  const st = {
-    ...DEFAULTS, orientation: 'L', stringersPerFlight: 2, treads1: 8, treads2: 6,
-    landingCount: 2, beamXCount: 2, beamYCount: 1,
-  };
-  // 2 flights x 2 stringers, 8 + 6 treads, 2 landings x (2 + 1) beams
-  assert.equal(standardLabourHours(st), 4 * 6.5 + 14 + 6 * 1.5); // 49
-  // It counts the same pieces as computeEstimate.
-  const r = computeEstimate(st);
-  assert.equal(standardLabourHours(st),
-    r.stringers.count * 6.5 + r.totalTreads + (r.beamsX.count + r.beamsY.count) * 1.5);
-});
-
 test('standard hours do not change labourHours in computeEstimate (the user value is used)', () => {
-  const r = computeEstimate({ ...DEFAULTS, treads1: 20, labourHours: 30, shopRate: 100 });
+  const r = computeEstimate({ ...BASE, treads1: 20, labourHours: 30, shopRate: 100 });
   assert.equal(r.costs.labour, 3000);
 });
 
 test('detailing and installation lump sums go into the subtotal before markup', () => {
-  const base = computeEstimate({ ...DEFAULTS, markupPct: 0 });
-  const withLs = computeEstimate({ ...DEFAULTS, markupPct: 0, detailingCost: 1200, installationCost: 3500 });
+  const base = computeEstimate({ ...BASE, markupPct: 0 });
+  const withLs = computeEstimate({ ...BASE, markupPct: 0, detailingCost: 1200, installationCost: 3500 });
   assert.equal(withLs.costs.detailing, 1200);
   assert.equal(withLs.costs.installation, 3500);
   near(withLs.costs.subtotal - base.costs.subtotal, 4700, 0.011);
@@ -147,40 +132,37 @@ test('detailing and installation lump sums go into the subtotal before markup', 
   near(withLs.costs.subtotal,
     withLs.costs.steel + withLs.costs.treads + withLs.costs.labour + 1200 + 3500, 0.011);
 
-  const base10 = computeEstimate({ ...DEFAULTS, markupPct: 10 });
-  const withLs10 = computeEstimate({ ...DEFAULTS, markupPct: 10, detailingCost: 1200, installationCost: 3500 });
+  const base10 = computeEstimate({ ...BASE, markupPct: 10 });
+  const withLs10 = computeEstimate({ ...BASE, markupPct: 10, detailingCost: 1200, installationCost: 3500 });
   near(withLs10.costs.subtotal - base10.costs.subtotal, 4700, 0.011);
   near(withLs10.costs.markup - base10.costs.markup, 470, 0.011);
   near(withLs10.costs.total - base10.costs.total, 4700 * 1.1, 0.011);
   // Form text works too.
-  const txt = computeEstimate({ ...DEFAULTS, detailingCost: '1200', installationCost: '3500' });
+  const txt = computeEstimate({ ...BASE, detailingCost: '1200', installationCost: '3500' });
   assert.equal(txt.costs.detailing, 1200);
   assert.equal(txt.costs.installation, 3500);
 });
 
 test('garbage in the new keys never produces NaN', () => {
   for (const v of ['', 'abc', NaN, Infinity, -500, null, undefined]) {
-    const r = computeEstimate({ ...DEFAULTS, detailingCost: v, installationCost: v });
+    const r = computeEstimate({ ...BASE, detailingCost: v, installationCost: v });
     assertAllFinite(r);
     assert.equal(r.costs.detailing, 0, String(v));
     assert.equal(r.costs.installation, 0, String(v));
   }
   for (const st of [{}, undefined, null, { orientation: 'straight', treads1: 'abc', stringersPerFlight: NaN },
     { landingCount: 'x', beamXCount: Infinity, beamYCount: -3, treads2: null }]) {
-    const h = standardLabourHours(st);
-    assert.ok(Number.isFinite(h), String(h));
-    assert.ok(h >= 0);
+    assertAllFinite(computeEstimate(st));
   }
-  assert.equal(standardLabourHours({}), 0);
 });
 
 test("'straight' has 1 flight and ignores treads2; other orientations have 2", () => {
-  const r = computeEstimate({ ...DEFAULTS, orientation: 'straight', treads1: 12, treads2: 99 });
+  const r = computeEstimate({ ...BASE, orientation: 'straight', treads1: 12, treads2: 99 });
   assert.equal(r.flights.length, 1);
   assert.equal(r.totalTreads, 12);
   assert.equal(r.stringers.count, 2);
   for (const o of ['inline', 'L', 'U']) {
-    assert.equal(computeEstimate({ ...DEFAULTS, orientation: o }).flights.length, 2, o);
+    assert.equal(computeEstimate({ ...BASE, orientation: o }).flights.length, 2, o);
   }
 });
 
@@ -218,14 +200,13 @@ test('normalizeOrientation: old left/right values, new values, junk', () => {
 test("old orientations give the same numbers as the new ones ('U-left' = 'U', 'L-right' = 'L')", () => {
   for (const [oldO, newO] of [['U-left', 'U'], ['U-right', 'U'], ['L-right', 'L'], ['L-left', 'L']]) {
     for (const extra of [{}, { landingCount: 2, deckRatePerSqFt: 12, finishRatePerFt: 2.5 }, { landingDepth: 30 }]) {
-      const st = { ...DEFAULTS, ...extra };
+      const st = { ...BASE, ...extra };
       assert.equal(landingWidth({ ...st, orientation: oldO }), landingWidth({ ...st, orientation: newO }), oldO);
       assert.deepEqual(computeEstimate({ ...st, orientation: oldO }), computeEstimate({ ...st, orientation: newO }), oldO);
-      assert.equal(standardLabourHours({ ...st, orientation: oldO }), standardLabourHours({ ...st, orientation: newO }), oldO);
     }
   }
   // And U really differs from L (so the comparison above is not trivially equal).
-  assert.notEqual(landingWidth({ ...DEFAULTS, orientation: 'U' }), landingWidth({ ...DEFAULTS, orientation: 'L' }));
+  assert.notEqual(landingWidth({ ...BASE, orientation: 'U' }), landingWidth({ ...BASE, orientation: 'L' }));
 });
 
 test('sectionWeight: table values and Custom', () => {
@@ -235,7 +216,7 @@ test('sectionWeight: table values and Custom', () => {
   assert.equal(sectionWeight('Custom', ''), 0);
   assert.equal(sectionWeight('nope'), 0);
   // Custom lb/ft flows through to the stringer weight.
-  const r = computeEstimate({ ...DEFAULTS, stringerSection: 'Custom', stringerCustomLbFt: 30 });
+  const r = computeEstimate({ ...BASE, stringerSection: 'Custom', stringerCustomLbFt: 30 });
   assert.equal(r.stringers.lbft, 30);
   near(r.stringers.weightLb, r.stringers.lengthFt * 30, 1e-9);
 });
@@ -255,7 +236,7 @@ test('SECTIONS rows are well formed', () => {
 
 test('landing beam hand check: U 44" + 4" gap, 48" deep, 2 X + 2 Y C8x11.2', () => {
   const r = computeEstimate({
-    ...DEFAULTS, orientation: 'U', stairWidth: 44, wellGap: 4, landingDepth: 48,
+    ...BASE, orientation: 'U', stairWidth: 44, wellGap: 4, landingDepth: 48,
     landingCount: 1, beamXCount: 2, beamYCount: 2, beamXSection: 'C8x11.2', beamYSection: 'C8x11.2',
   });
   // X: 2 x 92" = 184" = 15.333 ft x 11.2 = 171.73 lb
@@ -276,7 +257,7 @@ test('landing beam hand check: U 44" + 4" gap, 48" deep, 2 X + 2 Y C8x11.2', () 
 });
 
 test('result has beamsX / beamsY and no old channels key', () => {
-  const r = computeEstimate(DEFAULTS);
+  const r = computeEstimate(BASE);
   assert.ok('beamsX' in r && 'beamsY' in r);
   assert.ok(!('channels' in r));
   for (const k of ['landingSection', 'landingCustomLbFt', 'channelsPerLanding', 'channelLengthAuto', 'channelLengthOverride']) {
@@ -285,7 +266,7 @@ test('result has beamsX / beamsY and no old channels key', () => {
 });
 
 test('beamYCount 0 -> no Y steel and no Y warning, even with a 0 lb/ft Y section', () => {
-  const r = computeEstimate({ ...DEFAULTS, beamYCount: 0, beamYSection: 'Custom', beamYCustomLbFt: 0 });
+  const r = computeEstimate({ ...BASE, beamYCount: 0, beamYSection: 'Custom', beamYCustomLbFt: 0 });
   assert.equal(r.beamsY.count, 0);
   assert.equal(r.beamsY.lengthFt, 0);
   assert.equal(r.beamsY.weightLb, 0);
@@ -294,39 +275,39 @@ test('beamYCount 0 -> no Y steel and no Y warning, even with a 0 lb/ft Y section
 });
 
 test('zero lb/ft warning per axis, only when that axis has beams', () => {
-  const x0 = computeEstimate({ ...DEFAULTS, beamXSection: 'Custom', beamXCustomLbFt: 0 });
+  const x0 = computeEstimate({ ...BASE, beamXSection: 'Custom', beamXCustomLbFt: 0 });
   assert.ok(x0.warnings.some((w) => w.includes('X landing beam')));
   assert.ok(!x0.warnings.some((w) => w.includes('Y landing beam')));
-  const y0 = computeEstimate({ ...DEFAULTS, beamYSection: 'Custom', beamYCustomLbFt: 0 });
+  const y0 = computeEstimate({ ...BASE, beamYSection: 'Custom', beamYCustomLbFt: 0 });
   assert.ok(y0.warnings.some((w) => w.includes('Y landing beam')));
   assert.ok(!y0.warnings.some((w) => w.includes('X landing beam')));
-  const x0none = computeEstimate({ ...DEFAULTS, beamXCount: 0, beamXSection: 'nope' });
+  const x0none = computeEstimate({ ...BASE, beamXCount: 0, beamXSection: 'nope' });
   assert.ok(!x0none.warnings.some((w) => w.includes('X landing beam')));
-  const s0 = computeEstimate({ ...DEFAULTS, stringerSection: 'Custom', stringerCustomLbFt: 0 });
+  const s0 = computeEstimate({ ...BASE, stringerSection: 'Custom', stringerCustomLbFt: 0 });
   assert.ok(s0.warnings.some((w) => w.includes('stringer')));
 });
 
 test('length override on each axis is used when its auto switch is off', () => {
-  const rx = computeEstimate({ ...DEFAULTS, beamXLengthAuto: false, beamXLengthOverride: 60 });
+  const rx = computeEstimate({ ...BASE, beamXLengthAuto: false, beamXLengthOverride: 60 });
   assert.equal(rx.beamsX.eachLengthIn, 60);
   near(rx.beamsX.lengthFt, (2 * 60) / 12, 1e-9);
   near(rx.beamsX.weightLb, 10 * 11.2, 1e-9);
   assert.equal(rx.beamsY.eachLengthIn, 48);          // Y still automatic
 
-  const ry = computeEstimate({ ...DEFAULTS, beamYLengthAuto: false, beamYLengthOverride: 30 });
+  const ry = computeEstimate({ ...BASE, beamYLengthAuto: false, beamYLengthOverride: 30 });
   assert.equal(ry.beamsY.eachLengthIn, 30);
   near(ry.beamsY.lengthFt, (2 * 30) / 12, 1e-9);
   near(ry.beamsY.weightLb, 5 * 11.2, 1e-9);
   assert.equal(ry.beamsX.eachLengthIn, 92);          // X still automatic
 
   // The text 'false' from a form counts as off too.
-  const rs = computeEstimate({ ...DEFAULTS, beamYLengthAuto: 'false', beamYLengthOverride: 30 });
+  const rs = computeEstimate({ ...BASE, beamYLengthAuto: 'false', beamYLengthOverride: 30 });
   assert.equal(rs.beamsY.eachLengthIn, 30);
 });
 
 test('Custom lb/ft on each axis', () => {
   const r = computeEstimate({
-    ...DEFAULTS, beamXSection: 'Custom', beamXCustomLbFt: 15, beamYSection: 'Custom', beamYCustomLbFt: 9,
+    ...BASE, beamXSection: 'Custom', beamXCustomLbFt: 15, beamYSection: 'Custom', beamYCustomLbFt: 9,
   });
   assert.equal(r.beamsX.section, 'Custom');
   assert.equal(r.beamsX.lbft, 15);
@@ -336,14 +317,14 @@ test('Custom lb/ft on each axis', () => {
   near(r.beamsY.weightLb, ((2 * 48) / 12) * 9, 1e-9);
   assert.deepEqual(r.warnings, []);
   // A custom lb/ft is ignored while a table section is picked.
-  const t = computeEstimate({ ...DEFAULTS, beamXCustomLbFt: 99, beamYCustomLbFt: 99 });
+  const t = computeEstimate({ ...BASE, beamXCustomLbFt: 99, beamYCustomLbFt: 99 });
   assert.equal(t.beamsX.lbft, 11.2);
   assert.equal(t.beamsY.lbft, 11.2);
 });
 
 test('landingCount 2 doubles both beam counts and weights', () => {
-  const one = computeEstimate({ ...DEFAULTS, landingCount: 1, beamXCount: 2, beamYCount: 3 });
-  const two = computeEstimate({ ...DEFAULTS, landingCount: 2, beamXCount: 2, beamYCount: 3 });
+  const one = computeEstimate({ ...BASE, landingCount: 1, beamXCount: 2, beamYCount: 3 });
+  const two = computeEstimate({ ...BASE, landingCount: 2, beamXCount: 2, beamYCount: 3 });
   assert.equal(one.beamsX.count, 2);
   assert.equal(one.beamsY.count, 3);
   assert.equal(two.beamsX.count, 4);
@@ -355,7 +336,7 @@ test('landingCount 2 doubles both beam counts and weights', () => {
 });
 
 test('landingCount is clamped to 1 or 2 (straight: always 1)', () => {
-  const est = (st) => computeEstimate({ ...DEFAULTS, beamXCount: 2, beamYCount: 3, ...st });
+  const est = (st) => computeEstimate({ ...BASE, beamXCount: 2, beamYCount: 3, ...st });
   // Through computeEstimate: beams = landings x beams per landing.
   assert.equal(est({ landingCount: 0 }).beamsX.count, 2);             // 0 -> 1
   assert.equal(est({ landingCount: 5 }).beamsX.count, 4);             // 5 -> 2
@@ -364,18 +345,10 @@ test('landingCount is clamped to 1 or 2 (straight: always 1)', () => {
   assert.equal(est({ orientation: 'straight', landingCount: 2 }).beamsX.count, 2); // straight -> 1
   assert.equal(est({ orientation: 'L', landingCount: 2 }).beamsX.count, 4);        // L keeps 2
   assert.equal(est({ landingCount: '2' }).beamsY.count, 6);           // form text '2' -> 2
-
-  // Through standardLabourHours: 1.5 h per landing beam (2 X + 3 Y per landing).
-  const hours = (st) => standardLabourHours({ ...DEFAULTS, beamXCount: 2, beamYCount: 3, ...st });
-  assert.equal(hours({ landingCount: 0 }), hours({ landingCount: 1 }));
-  assert.equal(hours({ landingCount: 5 }), hours({ landingCount: 2 }));
-  assert.equal(hours({ landingCount: 'abc' }), hours({ landingCount: 1 }));
-  assert.equal(hours({ orientation: 'straight', landingCount: 2 }), hours({ orientation: 'straight', landingCount: 1 }));
-  assert.equal(hours({ orientation: 'L', landingCount: 2 }) - hours({ orientation: 'L', landingCount: 1 }), 5 * 1.5);
 });
 
 test('landingBeamLength: x and y, auto and override', () => {
-  const st = { ...DEFAULTS, orientation: 'U', stairWidth: 44, wellGap: 4, landingDepth: 48 };
+  const st = { ...BASE, orientation: 'U', stairWidth: 44, wellGap: 4, landingDepth: 48 };
   assert.equal(landingBeamLength(st, 'x'), 92);                // auto X = landingWidth
   assert.equal(landingBeamLength(st, 'y'), 48);                // auto Y = landingDepth
   assert.equal(landingBeamLength({ ...st, orientation: 'L' }, 'x'), 44);
@@ -394,17 +367,17 @@ test('landingBeamLength: x and y, auto and override', () => {
 });
 
 test('warnings', () => {
-  const steep = computeEstimate({ ...DEFAULTS, riserHeight: 8, treadDepth: 9 });
+  const steep = computeEstimate({ ...BASE, riserHeight: 8, treadDepth: 9 });
   assert.ok(steep.warnings.some((w) => w.startsWith('Riser height over')));
   assert.ok(steep.warnings.some((w) => w.startsWith('Tread depth under')));
-  const empty = computeEstimate({ ...DEFAULTS, treads1: 0 });
+  const empty = computeEstimate({ ...BASE, treads1: 0 });
   assert.ok(empty.warnings.includes('Flight 1 has no treads.'));
-  const shortL = computeEstimate({ ...DEFAULTS, orientation: 'L', landingDepth: 36, stairWidth: 44 });
+  const shortL = computeEstimate({ ...BASE, orientation: 'L', landingDepth: 36, stairWidth: 44 });
   assert.ok(shortL.warnings.some((w) => w.startsWith('Landing depth')));
-  const shortU = computeEstimate({ ...DEFAULTS, orientation: 'U', landingDepth: 36, stairWidth: 44 });
+  const shortU = computeEstimate({ ...BASE, orientation: 'U', landingDepth: 36, stairWidth: 44 });
   assert.ok(!shortU.warnings.some((w) => w.startsWith('Landing depth')));
   // An old saved 'L-left' still gets the L-stair landing-depth check.
-  const shortOldL = computeEstimate({ ...DEFAULTS, orientation: 'L-left', landingDepth: 36, stairWidth: 44 });
+  const shortOldL = computeEstimate({ ...BASE, orientation: 'L-left', landingDepth: 36, stairWidth: 44 });
   assert.ok(shortOldL.warnings.some((w) => w.startsWith('Landing depth')));
 });
 
@@ -418,9 +391,9 @@ test('garbage input never produces NaN', () => {
 
   assertAllFinite(computeEstimate({}));
   assertAllFinite(computeEstimate(undefined));
-  assertAllFinite(computeEstimate({ ...DEFAULTS, treads1: 'abc', riserHeight: NaN, stairWidth: Infinity, markupPct: null }));
+  assertAllFinite(computeEstimate({ ...BASE, treads1: 'abc', riserHeight: NaN, stairWidth: Infinity, markupPct: null }));
   assertAllFinite(computeEstimate({
-    ...DEFAULTS, landingDepth: 'x', beamXCount: 'two', beamYCount: NaN, beamXCustomLbFt: null,
+    ...BASE, landingDepth: 'x', beamXCount: 'two', beamYCount: NaN, beamXCustomLbFt: null,
     beamXSection: 'Custom', beamYSection: undefined, beamXLengthAuto: false, beamXLengthOverride: 'abc',
     beamYLengthAuto: 'false', beamYLengthOverride: Infinity,
   }));
@@ -429,10 +402,10 @@ test('garbage input never produces NaN', () => {
   assert.equal(r1.beamsY.weightLb, 0);
 
   // Negatives clamp to 0, fractional tread counts round to whole treads.
-  const r2 = computeEstimate({ ...DEFAULTS, orientation: 'straight', treads1: -5, labourHours: -10 });
+  const r2 = computeEstimate({ ...BASE, orientation: 'straight', treads1: -5, labourHours: -10 });
   assert.equal(r2.totalTreads, 0);
   assert.equal(r2.costs.labour, 0);
-  const r3 = computeEstimate({ ...DEFAULTS, orientation: 'straight', treads1: '9.6' });
+  const r3 = computeEstimate({ ...BASE, orientation: 'straight', treads1: '9.6' });
   assert.equal(r3.totalTreads, 10);
   assert.equal(r3.flights[0].risers, 11);
 });
@@ -464,7 +437,7 @@ test('fmtMoney and fmtNum', () => {
 });
 
 test('money lines are rounded to the cent and add up exactly', () => {
-  const r = computeEstimate({ ...DEFAULTS, deckRatePerSqFt: 12.37, finishRatePerFt: 2.33, freightCost: 450.5, markupPct: 7.5 });
+  const r = computeEstimate({ ...BASE, deckRatePerSqFt: 12.37, finishRatePerFt: 2.33, freightCost: 450.5, markupPct: 7.5 });
   const c = r.costs;
   for (const k of Object.keys(c)) assert.equal(Math.round(c[k] * 100) / 100, c[k], k + ' is whole cents');
   assert.equal(Math.round((c.steel + c.treads + c.deck + c.finish + c.labour + c.detailing + c.installation + c.freight) * 100), Math.round(c.subtotal * 100));
@@ -472,15 +445,15 @@ test('money lines are rounded to the cent and add up exactly', () => {
 });
 
 test('PST: charged on materials only (steel + treads), after markup', () => {
-  const r = computeEstimate({ ...DEFAULTS, markupPct: 10, detailingCost: 1200, installationCost: 3500 });
+  const r = computeEstimate({ ...BASE, markupPct: 10, detailingCost: 1200, installationCost: 3500 });
   near(r.costs.pst, (r.costs.steel + r.costs.treads) * 0.07, 0.011);
   near(r.costs.total, r.costs.subtotal + r.costs.markup + r.costs.pst, 0.011);
   // Labour, detailing, installation and markup do not change the PST.
-  const more = computeEstimate({ ...DEFAULTS, markupPct: 25, labourHours: 200, detailingCost: 9999, installationCost: 5000 });
+  const more = computeEstimate({ ...BASE, markupPct: 25, labourHours: 200, detailingCost: 9999, installationCost: 5000 });
   near(more.costs.pst, r.costs.pst, 0.011);
   // 0% and garbage give no tax and no NaN.
-  assert.equal(computeEstimate({ ...DEFAULTS, pstPct: 0 }).costs.pst, 0);
-  assert.equal(computeEstimate({ ...DEFAULTS, pstPct: 'abc' }).costs.pst, 0);
+  assert.equal(computeEstimate({ ...BASE, pstPct: 0 }).costs.pst, 0);
+  assert.equal(computeEstimate({ ...BASE, pstPct: 'abc' }).costs.pst, 0);
 });
 
 test('finish: $/ft over stringers + landing beams only (treads excluded)', () => {
@@ -488,10 +461,10 @@ test('finish: $/ft over stringers + landing beams only (treads excluded)', () =>
   assert.equal(DEFAULTS.finishType, 'SP3/Standard Primer');
   assert.equal(DEFAULTS.finishRatePerFt, 0);
 
-  const zero = computeEstimate(DEFAULTS);
+  const zero = computeEstimate(BASE);
   assert.equal(zero.costs.finish, 0);                 // default rate 0 -> no cost
 
-  const r = computeEstimate({ ...DEFAULTS, finishRatePerFt: 2.5 });
+  const r = computeEstimate({ ...BASE, finishRatePerFt: 2.5 });
   const ft = r.stringers.lengthFt + r.beamsX.lengthFt + r.beamsY.lengthFt;
   near(r.finish.lengthFt, ft, 1e-9);
   near(r.finish.lengthFt, 72.09, 0.01);               // ~48.76 + 15.33 + 8.0 on the default stair
@@ -502,38 +475,38 @@ test('finish: $/ft over stringers + landing beams only (treads excluded)', () =>
   near(r.costs.subtotal - zero.costs.subtotal, r.costs.finish, 0.011);
   assert.equal(r.costs.pst, zero.costs.pst);
   // More treads do not change the finish footage.
-  const more = computeEstimate({ ...DEFAULTS, finishRatePerFt: 2.5, treads1: 15 });
+  const more = computeEstimate({ ...BASE, finishRatePerFt: 2.5, treads1: 15 });
   near(more.finish.lengthFt - more.stringers.lengthFt, r.finish.lengthFt - r.stringers.lengthFt, 1e-9);
   // Garbage rate -> 0, no NaN.
-  assert.equal(computeEstimate({ ...DEFAULTS, finishRatePerFt: 'x' }).costs.finish, 0);
+  assert.equal(computeEstimate({ ...BASE, finishRatePerFt: 'x' }).costs.finish, 0);
 });
 
 test('landing deck: $/sq.ft over every landing, taxed with materials', () => {
   assert.equal(DEFAULTS.deckRatePerSqFt, 0);
-  const zero = computeEstimate(DEFAULTS);
+  const zero = computeEstimate(BASE);
   near(zero.deck.sqFt, (92 * 48) / 144, 1e-9);        // U: 2 x 44 + 4 wide, 48 deep = 30.67 sq.ft
   assert.equal(zero.costs.deck, 0);
 
-  const r = computeEstimate({ ...DEFAULTS, deckRatePerSqFt: 12 });
+  const r = computeEstimate({ ...BASE, deckRatePerSqFt: 12 });
   near(r.costs.deck, 368, 0.006);                      // 30.667 x $12
   near(r.costs.subtotal - zero.costs.subtotal, 368, 0.011);
   near(r.costs.pst - zero.costs.pst, 368 * 0.07, 0.011);  // deck is a material: PST applies
 
-  const L = computeEstimate({ ...DEFAULTS, orientation: 'L', deckRatePerSqFt: 1 });
+  const L = computeEstimate({ ...BASE, orientation: 'L', deckRatePerSqFt: 1 });
   near(L.deck.sqFt, (44 * 48) / 144, 1e-9);
-  const two = computeEstimate({ ...DEFAULTS, landingCount: 2 });
+  const two = computeEstimate({ ...BASE, landingCount: 2 });
   near(two.deck.sqFt, 2 * zero.deck.sqFt, 1e-9);
   // landingCount 0 is clamped up to 1, so it prices the 1-landing deck (368), not 0.
-  near(computeEstimate({ ...DEFAULTS, landingCount: 0, deckRatePerSqFt: 12 }).costs.deck, 368, 0.006);
-  assert.equal(computeEstimate({ ...DEFAULTS, deckRatePerSqFt: 'x' }).costs.deck, 0);
+  near(computeEstimate({ ...BASE, landingCount: 0, deckRatePerSqFt: 12 }).costs.deck, 368, 0.006);
+  assert.equal(computeEstimate({ ...BASE, deckRatePerSqFt: 'x' }).costs.deck, 0);
 });
 
 test('freight: lump sum in the subtotal, not taxed', () => {
   assert.equal(DEFAULTS.freightCost, 0);
-  const zero = computeEstimate(DEFAULTS);
-  const r = computeEstimate({ ...DEFAULTS, freightCost: 500 });
+  const zero = computeEstimate(BASE);
+  const r = computeEstimate({ ...BASE, freightCost: 500 });
   assert.equal(r.costs.freight, 500);
   near(r.costs.total - zero.costs.total, 500, 0.011);
   assert.equal(r.costs.pst, zero.costs.pst);
-  assert.equal(computeEstimate({ ...DEFAULTS, freightCost: '' }).costs.freight, 0);
+  assert.equal(computeEstimate({ ...BASE, freightCost: '' }).costs.freight, 0);
 });

@@ -61,21 +61,21 @@ All lengths inside `state` and inside the calculations are **inches**. Weights a
 | `beamYCount` | int | `2` | Y beams per landing |
 | `beamYLengthAuto` | bool | `true` | `true` → each Y beam = landing depth (`landingDepth`) |
 | `beamYLengthOverride` | number (in) | `48` | Y beam length used when `beamYLengthAuto` is `false` |
-| `pricePerTread` | number $ | `85` | supply cost per tread (pan, grating, etc.) |
-| `pricePerLb` | number $ | `1.6` | channel steel cost per lb |
+| `pricePerTread` | number $ | `0` | supply cost per tread (pan, grating, etc.) |
+| `pricePerLb` | number $ | `0` | channel steel cost per lb |
 | `connectionAllowancePct` | number % | `15` | extra steel weight for clips, plates, angles, bolts, welds |
 | `finishType` | string | `'SP3/Standard Primer'` | a `FINISHES` name (finish dropdown) |
 | `finishRatePerFt` | number $/ft | `0` | finish price per ft of stringers + landing beams. Treads are excluded: the tread finish is in `pricePerTread` |
-| `labourHours` | number | `standardLabourHours(DEFAULTS)` (52 for the default stair) | total shop hours. The default is worked out **once** from the default stair by `standardLabourHours()` in `calc.js`; after that it is a plain number the user edits. It does not follow later changes to the stair |
-| `shopRate` | number $/hr | `100` | labour rate |
+| `labourHours` | number | `0` | total shop hours, typed by the user |
+| `shopRate` | number $/hr | `0` | labour rate |
 | `detailingCost` | number $ | `0` | detailing (shop drawings), one lump sum |
 | `installationCost` | number $ | `0` | installation (erection crew, equipment, travel), one lump sum |
 | `freightCost` | number $ | `0` | freight / delivery, one lump sum; not taxed |
 | `markupPct` | number % | `0` | applied to the subtotal |
 | `pstPct` | number % | `7` | PST (BC rate), charged on **materials only** (steel + treads), added after markup. GST is excluded |
 
-`DEFAULTS` (in `calc.js`) holds exactly these keys and values. The prices are
-**example rates**, not real quotes, and the page labels them that way.
+`DEFAULTS` (in `calc.js`) holds exactly these keys and values. On a first visit every $
+rate and the shop hours are **0**; the user enters their own and the page remembers them.
 
 *Removed keys (v1 → v2)*: `landingSection`, `landingCustomLbFt`, `channelsPerLanding`,
 `channelLengthAuto`, `channelLengthOverride`. They were the old single set of landing
@@ -95,10 +95,6 @@ function normalizeOrientation(o)          // -> 'straight' | 'inline' | 'L' | 'U
 function landingWidth(state)               // -> inches, landing size across the stair = auto X beam length (§3)
 function landingBeamLength(state, axis)    // axis 'x' | 'y' -> inches, length of ONE beam on that axis,
                                            //   honouring beamXLengthAuto/Override or beamYLengthAuto/Override
-function standardLabourHours(state)        // -> standard shop hours for a stair; used ONLY to set
-                                           //   DEFAULTS.labourHours. Its rates are an internal
-                                           //   pricing rule: never show or describe them on the page
-                                           //   or in the docs (see the comment in calc.js)
 function computeEstimate(state)            // -> result (below)
 function fmtFtIn(inches)                   // 42 -> 3'-6"   263.56 -> 21'-11 1/2"  (nearest 1/8")
 function fmtMoney(n)                       // 1234.5 -> "$1,234.50"
@@ -106,7 +102,7 @@ function fmtNum(n, decimals = 0)           // 1234.5 -> "1,235"
 ```
 
 The file ends with
-`if (typeof module !== 'undefined') module.exports = { SECTIONS, FINISHES, DEFAULTS, normalizeOrientation, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };`
+`if (typeof module !== 'undefined') module.exports = { SECTIONS, FINISHES, DEFAULTS, normalizeOrientation, sectionWeight, landingWidth, landingBeamLength, computeEstimate, fmtFtIn, fmtMoney, fmtNum };`
 so Node tests can `require` it.
 
 `SECTIONS` (AISC lb/ft): C6x8.2, C6x10.5, C7x9.8, C7x12.25, C8x11.2, C8x11.5,
@@ -296,7 +292,7 @@ merges the saved values over `DEFAULTS` on load.
 
 * **Add a channel size**: add `{ name, lbft, depth }` to `SECTIONS` in `js/calc.js`. All three
   dropdowns pick it up automatically.
-* **Change the default values or example rates**: edit `DEFAULTS` in `js/calc.js`.
+* **Change the starting values**: edit `DEFAULTS` in `js/calc.js`.
 * **Change the look**: the colour/type tokens at the top of `css/styles.css` mirror the
   *Steel Size Rolodex* app (white/black, ink, `#ff4f00` accent, Barlow Condensed + IBM Plex
   Mono). Keep the two in sync. Plan colours are the `--plan-*` tokens in the same file.
