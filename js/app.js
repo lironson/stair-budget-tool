@@ -8,11 +8,15 @@
  *   2. Loads the last-used values from localStorage (key 'stairEstimator.v1'),
  *      merged over DEFAULTS, and writes them into the form. Saves made before the
  *      landings had X and Y beams (keys landingSection, channelsPerLanding, …) are
- *      migrated onto the X beam keys (see LEGACY_KEYS).
+ *      migrated onto the X beam keys (see LEGACY_KEYS). Saves made before schema 2
+ *      drop the old example labour / markup values (see OLD_DEFAULTS).
  *   3. On every keystroke / change: reads the form into a `state` object, shows or
  *      hides the optional fields, runs computeEstimate(state), fills the estimate
- *      table, redraws the plan with renderPlan(svg, state) and saves the state.
- *   4. Handles the Print, Reset and Dark mode controls.
+ *      table, redraws the plan with renderPlan(svg, state), refreshes the one-line
+ *      summaries of the collapsible input sections and saves the state.
+ *   4. Remembers which input sections (<details class="section">) each viewer has
+ *      open or closed (localStorage key 'stairEstimator.sections').
+ *   5. Handles the Print, Reset and Dark mode controls.
  *
  * HOW IT CONNECTS TO THE OTHER FILES
  *   index.html loads js/calc.js, then js/plan.js, then this file (classic scripts).
@@ -31,14 +35,25 @@
  *     new input is read, typed (number / checkbox / text) and saved automatically.
  *     If it must be a whole number, add its key to INT_KEYS below.
  *   - Add a cost line: compute it in computeEstimate() (calc.js), then add a row in
- *     renderResults() below — copy the "Treads" row.
+ *     renderResults() below — copy the "Treads" row (or the "Detailing" row for a
+ *     lump sum with only a Cost value).
  *   - Show/hide a field depending on other inputs: give its wrapper an id and add
  *     a line in updateVisibility().
  *   - Landing beams come in two directions, X (across the stair) and Y (along it).
  *     Code that handles both loops over BEAM_AXES below; to add a per-axis input,
  *     add beamX…/beamY… keys to DEFAULTS and matching ids in index.html.
  *   - Rename a state key: add old -> new to LEGACY_KEYS so saved values carry over.
+ *   - Change a default that old saves may still hold: saves are written as
+ *     { ...state, schema: SAVE_SCHEMA }. Bump SAVE_SCHEMA and list the old values in
+ *     OLD_DEFAULTS; loadState() drops them from older saves so the new default applies.
  *   - Change the saved-data key: STORAGE_KEY below (changing it forgets old saves).
+ *   - Add an input section: add a <details class="section" id="sec-NAME"> with a
+ *     <span class="section-sum" id="sum-NAME"> in index.html (copy one), then add
+ *     NAME: function (state) { return '…'; } to SECTION_SUMMARIES below. That text
+ *     shows in the heading while the section is collapsed. Keep it short, values only.
+ *   - Section open/closed state: initSections() restores it from SECTIONS_KEY and
+ *     saves it on every `toggle` event, as { 'sec-NAME': true|false }. New sections
+ *     need no extra code; with nothing saved every section starts open.
  */
 
 (function () {
@@ -46,6 +61,22 @@
 
   /** localStorage key for the saved form values. */
   const STORAGE_KEY = 'stairEstimator.v1';
+
+  /**
+   * Version written with every save ({ ...state, schema: SAVE_SCHEMA }). Saves
+   * without it are older and get OLD_DEFAULTS dropped on load.
+   */
+  const SAVE_SCHEMA = 2;
+
+  /**
+   * Example values from before schema 2. A save without `schema: 2` that still holds
+   * exactly one of these was never changed by the user, so it is dropped on load and
+   * the current DEFAULTS value is used instead. Values the user changed are kept.
+   */
+  const OLD_DEFAULTS = { labourHours: 40, shopRate: 110, markupPct: 10 };
+
+  /** localStorage key for which input sections are open: { 'sec-NAME': bool }. */
+  const SECTIONS_KEY = 'stairEstimator.sections';
 
   /** localStorage key for the theme; shared with the Steel Size Rolodex app. */
   const THEME_KEY = 'theme';
@@ -229,21 +260,48 @@
   }
 
   /**
-   * Load the saved state (migrating old key names) and merge it over DEFAULTS.
-   * Only known keys with the same type as the default are kept, so an old or
-   * damaged save can't break the page. A migrated save is written straight back
-   * in the new format (same STORAGE_KEY).
-   * @returns {object} a complete state object
+   * Drop the old example values (OLD_DEFAULTS) from a save made before schema 2,
+   * so the current defaults apply. Values the user changed are kept.
+   *   { labourHours: 40, shopRate: 125 }  ->  { shopRate: 125 }
+   * Saves that already have `schema: SAVE_SCHEMA` are returned unchanged.
+   * @param {object} saved  parsed localStorage value (may be changed in place)
+   * @returns {boolean} true when the save was older than SAVE_SCHEMA
+   */
+  function dropOldDefaults(saved) {
+    if (saved.schema === SAVE_SCHEMA) return false;
+    Object.keys(OLD_DEFAULTS).forEach(function (key) {
+      if (saved[key] === OLD_DEFAULTS[key]) delete saved[key];
+    });
+    return true;
+  }
+
+  /**
+   * Save the state as { ...state, schema: SAVE_SCHEMA }. `schema` lives only in
+   * storage: loadState() keeps DEFAULTS keys only, so it never reaches the form
+   * or computeEstimate().
+   * @param {object} state  current state
+   */
+  function saveState(state) {
+    storageSet(STORAGE_KEY, Object.assign({}, state, { schema: SAVE_SCHEMA }));
+  }
+
+  /**
+   * Load the saved state (migrating old key names and old example defaults) and
+   * merge it over DEFAULTS. Only known keys with the same type as the default are
+   * kept, so an old or damaged save can't break the page. A migrated save is
+   * written straight back in the new format (same STORAGE_KEY, schema 2).
+   * @returns {object} a complete state object (DEFAULTS keys only)
    */
   function loadState() {
     const raw = storageGet(STORAGE_KEY);
     const state = Object.assign({}, DEFAULTS);
     if (raw && typeof raw === 'object') {
       const m = migrateSaved(raw);
+      const older = dropOldDefaults(m.state);
       Object.keys(DEFAULTS).forEach(function (key) {
         if (key in m.state && typeof m.state[key] === typeof DEFAULTS[key]) state[key] = m.state[key];
       });
-      if (m.migrated) storageSet(STORAGE_KEY, state);
+      if (m.migrated || older) saveState(state);
     }
     return state;
   }
@@ -448,6 +506,9 @@
         qty: fmtQty(state.labourHours) + ' hrs',
         cost: fmtMoney(c.labour),
       },
+      // Lump sums: Cost column only.
+      { name: 'Detailing', detail: 'Shop drawings — lump sum', cost: fmtMoney(c.detailing) },
+      { name: 'Installation', detail: 'Erection — lump sum', cost: fmtMoney(c.installation) },
       { name: 'Subtotal', cost: fmtMoney(c.subtotal), className: 'row-sub' },
       { name: 'Markup', qty: fmtQty(state.markupPct) + '%', cost: fmtMoney(c.markup) },
       { name: 'Total', cost: fmtMoney(c.total), className: 'row-total' },
@@ -459,18 +520,119 @@
   }
 
   /**
-   * Update the drawing's title strip with the chosen orientation, e.g. "U-STAIR, RETURN RIGHT".
+   * The chosen orientation's dropdown text, e.g. "U-stair, return right".
+   * @returns {string} '' when nothing is selected
    */
-  function updateTitleBlock() {
+  function orientationLabel() {
     const select = $('orientation');
-    const cell = $('tbOrientation');
-    if (!select || !cell) return;
-    const opt = select.options[select.selectedIndex];
-    cell.textContent = opt ? opt.textContent : '';
+    const opt = select ? select.options[select.selectedIndex] : null;
+    return opt ? opt.textContent : '';
   }
 
   /**
-   * The main loop: form -> state -> visibility -> estimate -> table -> plan -> save.
+   * Update the drawing's title strip with the chosen orientation, e.g. "U-STAIR, RETURN RIGHT".
+   */
+  function updateTitleBlock() {
+    const cell = $('tbOrientation');
+    if (cell) cell.textContent = orientationLabel();
+  }
+
+  /* ---------------------------------------------------------------------
+     Collapsible input sections
+     --------------------------------------------------------------------- */
+
+  /**
+   * Short name of a section for the collapsed summaries: the SECTIONS name, or
+   * "Custom 20 lb/ft".
+   * @param {string} section    section name or 'Custom'
+   * @param {number} customLbFt lb/ft used for 'Custom'
+   * @returns {string}
+   */
+  function shortSection(section, customLbFt) {
+    return section === CUSTOM ? 'Custom ' + fmtQty(customLbFt) + ' lb/ft' : section;
+  }
+
+  /**
+   * One-line text for each input section, shown in its heading while it is
+   * collapsed. Key NAME fills <span id="sum-NAME"> in <details id="sec-NAME">.
+   * Each function gets the current state and returns plain text (values only).
+   * To add a section, add an entry here (see HOW TO EDIT at the top).
+   */
+  const SECTION_SUMMARIES = {
+    // "U-stair, return right · 10 + 10 TR"   /   "Straight run · 12 TR"
+    layout: function (s) {
+      const treads = s.orientation === 'straight'
+        ? fmtNum(s.treads1)
+        : fmtNum(s.treads1) + ' + ' + fmtNum(s.treads2);
+      return orientationLabel() + ' · ' + treads + ' TR';
+    },
+    // "C12x20.7 × 2 / flight"
+    stringers: function (s) {
+      return shortSection(s.stringerSection, s.stringerCustomLbFt) + ' × ' + fmtNum(s.stringersPerFlight) + ' / flight';
+    },
+    // "1 landing · X 2 × C8x11.2 · Y 2 × C8x11.2"
+    landings: function (s) {
+      const parts = [fmtNum(s.landingCount) + (s.landingCount === 1 ? ' landing' : ' landings')];
+      BEAM_AXES.forEach(function (b) {
+        parts.push(b.axis.toUpperCase() + ' ' + fmtNum(s[b.key + 'Count']) + ' × ' +
+          shortSection(s[b.key + 'Section'], s[b.key + 'CustomLbFt']));
+      });
+      return parts.join(' · ');
+    },
+    // "$85.00 / tread · $1.60 / lb"
+    material: function (s) {
+      return fmtMoney(s.pricePerTread) + ' / tread · ' + fmtMoney(s.pricePerLb) + ' / lb';
+    },
+    // "52 hrs @ $100.00 / hr"
+    labour: function (s) {
+      return fmtQty(s.labourHours) + ' hrs @ ' + fmtMoney(s.shopRate) + ' / hr';
+    },
+    // "$1,200.00"
+    detailing: function (s) { return fmtMoney(s.detailingCost); },
+    // "$3,500.00"
+    installation: function (s) { return fmtMoney(s.installationCost); },
+    // "0%"
+    markup: function (s) { return fmtQty(s.markupPct) + '%'; },
+  };
+
+  /**
+   * Fill every section's collapsed summary (<span id="sum-NAME">) from the state.
+   * CSS shows the text only while that section is closed.
+   * @param {object} state  current state
+   */
+  function updateSectionSummaries(state) {
+    Object.keys(SECTION_SUMMARIES).forEach(function (name) {
+      const el = $('sum-' + name);
+      if (el) el.textContent = SECTION_SUMMARIES[name](state);
+    });
+  }
+
+  /**
+   * Restore each <details class="section">'s open/closed state from SECTIONS_KEY
+   * (sections not saved stay open), then save the state of all sections, as
+   * { 'sec-NAME': bool }, whenever one is opened or closed (`toggle` event).
+   */
+  function initSections() {
+    const sections = Array.prototype.slice.call(document.querySelectorAll('details.section'));
+    const saved = storageGet(SECTIONS_KEY);
+    if (saved && typeof saved === 'object') {
+      sections.forEach(function (d) {
+        if (typeof saved[d.id] === 'boolean') d.open = saved[d.id];
+      });
+    }
+
+    function save() {
+      const open = {};
+      sections.forEach(function (d) { if (d.id) open[d.id] = d.open; });
+      storageSet(SECTIONS_KEY, open);
+    }
+    // `toggle` does not bubble, so listen on each section.
+    sections.forEach(function (d) { d.addEventListener('toggle', save); });
+  }
+
+  /**
+   * The main loop: form -> state -> visibility -> estimate -> table -> plan ->
+   * section summaries -> save.
    * Runs on every input/change event.
    */
   function update() {
@@ -488,7 +650,8 @@
     }
 
     updateTitleBlock();
-    storageSet(STORAGE_KEY, state);
+    updateSectionSummaries(state);
+    saveState(state);
   }
 
   /* ---------------------------------------------------------------------
@@ -514,7 +677,10 @@
     update();
   }
 
-  /** Put every input back to DEFAULTS (no confirmation) and recompute. */
+  /**
+   * Put every input back to DEFAULTS (no confirmation; labourHours goes back to the
+   * default shop hours) and recompute. Section open/closed state is left alone.
+   */
   function resetToDefaults() {
     writeState(Object.assign({}, DEFAULTS));
     update();
@@ -548,12 +714,14 @@
   }
 
   /**
-   * Start-up: fill dropdowns, restore saved values, hook up events, first render.
+   * Start-up: fill dropdowns, restore saved values and open/closed sections, hook
+   * up events, first render.
    */
   function init() {
     logoFallback();
     fillSectionSelects();
     writeState(loadState());
+    initSections();
 
     const form = $('inputs');
     form.addEventListener('input', onFormEvent);

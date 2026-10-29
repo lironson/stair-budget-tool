@@ -63,9 +63,11 @@ All lengths inside `state` and inside the calculations are **inches**. Weights a
 | `pricePerTread` | number $ | `85` | supply cost per tread (pan, grating, etc.) |
 | `pricePerLb` | number $ | `1.6` | channel steel cost per lb |
 | `connectionAllowancePct` | number % | `15` | extra steel weight for clips, plates, angles, bolts, welds |
-| `labourHours` | number | `40` | total shop hours |
-| `shopRate` | number $/hr | `110` | labour rate |
-| `markupPct` | number % | `10` | applied to the subtotal |
+| `labourHours` | number | `standardLabourHours(DEFAULTS)` (52 for the default stair) | total shop hours. The default is worked out **once** from the default stair by `standardLabourHours()` in `calc.js`; after that it is a plain number the user edits. It does not follow later changes to the stair |
+| `shopRate` | number $/hr | `100` | labour rate |
+| `detailingCost` | number $ | `0` | detailing (shop drawings), one lump sum |
+| `installationCost` | number $ | `0` | installation (erection crew, equipment, travel), one lump sum |
+| `markupPct` | number % | `0` | applied to the subtotal |
 
 `DEFAULTS` (in `calc.js`) holds exactly these keys and values. The prices are
 **example rates**, not real quotes, and the page labels them that way.
@@ -85,6 +87,10 @@ function sectionWeight(name, customLbFt)   // -> lb/ft number ('Custom' returns 
 function landingWidth(state)               // -> inches, landing size across the stair = auto X beam length (§3)
 function landingBeamLength(state, axis)    // axis 'x' | 'y' -> inches, length of ONE beam on that axis,
                                            //   honouring beamXLengthAuto/Override or beamYLengthAuto/Override
+function standardLabourHours(state)        // -> standard shop hours for a stair; used ONLY to set
+                                           //   DEFAULTS.labourHours. Its rates are an internal
+                                           //   pricing rule: never show or describe them on the page
+                                           //   or in the docs (see the comment in calc.js)
 function computeEstimate(state)            // -> result (below)
 function fmtFtIn(inches)                   // 42 -> 3'-6"   263.56 -> 21'-11 1/2"  (nearest 1/8")
 function fmtMoney(n)                       // 1234.5 -> "$1,234.50"
@@ -92,7 +98,7 @@ function fmtNum(n, decimals = 0)           // 1234.5 -> "1,235"
 ```
 
 The file ends with
-`if (typeof module !== 'undefined') module.exports = { SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, computeEstimate, fmtFtIn, fmtMoney, fmtNum };`
+`if (typeof module !== 'undefined') module.exports = { SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };`
 so Node tests can `require` it.
 
 `SECTIONS` (AISC lb/ft): C6x8.2, C6x10.5, C7x9.8, C7x12.25, C8x11.2, C8x11.5,
@@ -114,7 +120,7 @@ dropdown option.
   baseSteelLb,                     // stringers.weightLb + beamsX.weightLb + beamsY.weightLb
   allowanceLb,                     // baseSteelLb x connectionAllowancePct / 100
   totalSteelLb,                    // baseSteelLb + allowanceLb
-  costs: { steel, treads, labour, subtotal, markup, total },
+  costs: { steel, treads, labour, detailing, installation, subtotal, markup, total },
   warnings: [ 'string', ... ]      // gentle checks, e.g. riser > 7 7/8", tread < 10", treads < 1
 }
 ```
@@ -124,7 +130,9 @@ Formulas:
 * `run = treads × treadDepth`, `rise = (treads + 1) × riserHeight`
 * `stringerLength = √(run² + rise²) + crankAllowance`
 * `costs.steel = totalSteelLb × pricePerLb`, `costs.treads = totalTreads × pricePerTread`,
-  `costs.labour = labourHours × shopRate`, `subtotal = steel + treads + labour`,
+  `costs.labour = labourHours × shopRate`, `costs.detailing = detailingCost`,
+  `costs.installation = installationCost`,
+  `subtotal = steel + treads + labour + detailing + installation`,
   `markup = subtotal × markupPct / 100`, `total = subtotal + markup`
 
 Hand check: 19 treads @ 11", 7" risers, 2 × C12x20.7, 12" allowance →
@@ -197,8 +205,42 @@ Other ids:
 | `beamXLengthAutoValue`, `beamYLengthAutoValue` | `<output>` | the auto length next to each "match" switch, e.g. `(7'-8")` |
 | wrapper elements `field-treads2`, `field-wellGap`, `field-stringerCustomLbFt`, `field-beamXCustomLbFt`, `field-beamXLengthOverride`, `field-beamYCustomLbFt`, `field-beamYLengthOverride` | | shown or hidden (`el.hidden`) depending on state |
 
+### Collapsible input sections
+
+Each input group is a `<details class="section" open>` whose `<summary>` is the group
+heading. Order and ids:
+
+| id | heading | collapsed summary (`<span class="section-sum" id="sum-…">`, filled by `app.js`) |
+|---|---|---|
+| `sec-layout` | Layout | orientation · treads, e.g. `U-stair, return right · 10 + 10 TR` |
+| `sec-stringers` | Stringers | e.g. `C12x20.7 × 2 / flight` |
+| `sec-landings` | Landings | e.g. `1 landing · X 2 × C8x11.2 · Y 2 × C8x11.2` |
+| `sec-material` | Material pricing | e.g. `$85.00 / tread · $1.60 / lb` |
+| `sec-labour` | Labour | e.g. `52 hrs @ $100.00 / hr` |
+| `sec-detailing` | Detailing | e.g. `$1,200.00` |
+| `sec-installation` | Installation | e.g. `$3,500.00` |
+| `sec-markup` | Markup | e.g. `0%` |
+
+Summary span ids are `sum-layout`, `sum-stringers`, … (same suffix as the section id).
+All sections start open; each viewer's open/closed state is remembered in
+`localStorage['stairEstimator.sections']` (an object `{ sectionId: bool }`).
+
+### Saved state, schema 2
+
+`app.js` saves `{ ...state, schema: 2 }`. When it loads a save without `schema: 2`, any of
+`labourHours`, `shopRate`, `markupPct` still equal to the **old** example defaults
+(`40`, `110`, `10`) is dropped so the new defaults apply; values the user changed are kept.
+
+### Print
+
+`window.print()` must produce **exactly one Letter page**: compact header, plan sheet,
+estimate (total, summary, warnings, table) and the disclaimer. Inputs, buttons and the
+theme switch are hidden. All print rules live in the `@media print` block of `styles.css`.
+
 Estimate table rows for the landing: **"Landing beams — X (across)"** and
 **"Landing beams — Y (along)"**, each with a detail line like `C8x11.2 · 11.2 lb/ft · 2 × 4'-0"`.
+After the Labour row come **"Detailing"** (detail line "Shop drawings — lump sum") and
+**"Installation"** (detail line "Erection — lump sum"), each with only a Cost value.
 
 `app.js` saves `state` to `localStorage['stairEstimator.v1']` (wrapped in try/catch) and
 merges the saved values over `DEFAULTS` on load.

@@ -17,7 +17,15 @@ and works out material and labour cost as you type.
   has its own section, beams per landing and length. The length matches the landing width
   (X) or depth (Y) automatically, or you can set it yourself.
 - **Material**: $/tread, $/lb of channel, and a % allowance for connections and misc steel.
-- **Labour**: total shop hours × shop rate, plus an optional markup.
+- **Labour**: total shop hours × shop rate. The starting hours are a standard figure for
+  the default stair; type over them with your own.
+- **Detailing** and **Installation**: one lump-sum line each (shop drawings; erection crew,
+  equipment and travel).
+- **Markup**: an optional % on the subtotal (0% to start).
+- **Collapsible sections**: each input group folds away and shows a one-line summary. Your
+  browser remembers which ones you left open.
+- **One-page print**: *Print estimate* gives a single Letter page with the plan and the
+  cost breakdown.
 - **Live plan view** in drawing style: stringers, landing channels, tread lines, UP arrows
   and dimension strings, all redrawn on every change.
 - Your last inputs and rates are remembered in the browser (localStorage).

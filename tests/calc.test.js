@@ -9,7 +9,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, computeEstimate, fmtFtIn, fmtMoney, fmtNum,
+  SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate,
+  fmtFtIn, fmtMoney, fmtNum,
 } = require('../js/calc.js');
 
 /** Assert that two numbers are within `tol` of each other. */
@@ -60,9 +61,9 @@ test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
   const totalLb = base + allowance;
   const steel = totalLb * 1.6;
   const treads = 20 * 85;
-  const labour = 40 * 110;
-  const subtotal = steel + treads + labour;
-  const markup = subtotal * 0.10;
+  const labour = 52 * 100;                    // default standard hours x $100/hr
+  const subtotal = steel + treads + labour;   // detailing and installation default to 0
+  const markup = 0;                           // default markup 0%
   const total = subtotal + markup;
 
   assert.equal(r.flights.length, 2);
@@ -84,10 +85,89 @@ test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
   near(r.costs.steel, steel, 1e-6);
   near(r.costs.treads, treads, 1e-9);
   near(r.costs.labour, labour, 1e-9);
+  assert.equal(r.costs.detailing, 0);
+  assert.equal(r.costs.installation, 0);
   near(r.costs.subtotal, subtotal, 1e-6);
   near(r.costs.markup, markup, 1e-6);
   near(r.costs.total, total, 1e-6);
   assert.deepEqual(r.warnings, []);
+});
+
+test('DEFAULTS: new cost keys and example rates', () => {
+  assert.equal(DEFAULTS.labourHours, 52);
+  assert.equal(DEFAULTS.labourHours, standardLabourHours(DEFAULTS));
+  assert.equal(DEFAULTS.shopRate, 100);
+  assert.equal(DEFAULTS.markupPct, 0);
+  assert.equal(DEFAULTS.detailingCost, 0);
+  assert.equal(DEFAULTS.installationCost, 0);
+  // labourHours sits next to shopRate; the lump sums sit between shopRate and markupPct.
+  const keys = Object.keys(DEFAULTS);
+  assert.deepEqual(keys.slice(keys.indexOf('labourHours')),
+    ['labourHours', 'shopRate', 'detailingCost', 'installationCost', 'markupPct']);
+});
+
+test('standardLabourHours: straight stair, 4 stringers, 12 treads, 1 landing of 2 X beams', () => {
+  const st = {
+    ...DEFAULTS, orientation: 'straight', stringersPerFlight: 4, treads1: 12, treads2: 99,
+    landingCount: 1, beamXCount: 2, beamYCount: 0,
+  };
+  near(standardLabourHours(st), 4 * 6.5 + 12 + 2 * 1.5, 1e-9); // 41
+  assert.equal(standardLabourHours(st), 41);
+});
+
+test('standardLabourHours: L-stair with 2 landings counts both flights and both landings', () => {
+  const st = {
+    ...DEFAULTS, orientation: 'L-left', stringersPerFlight: 2, treads1: 8, treads2: 6,
+    landingCount: 2, beamXCount: 2, beamYCount: 1,
+  };
+  // 2 flights x 2 stringers, 8 + 6 treads, 2 landings x (2 + 1) beams
+  assert.equal(standardLabourHours(st), 4 * 6.5 + 14 + 6 * 1.5); // 49
+  // It counts the same pieces as computeEstimate.
+  const r = computeEstimate(st);
+  assert.equal(standardLabourHours(st),
+    r.stringers.count * 6.5 + r.totalTreads + (r.beamsX.count + r.beamsY.count) * 1.5);
+});
+
+test('standard hours do not change labourHours in computeEstimate (the user value is used)', () => {
+  const r = computeEstimate({ ...DEFAULTS, treads1: 20, labourHours: 30, shopRate: 100 });
+  assert.equal(r.costs.labour, 3000);
+});
+
+test('detailing and installation lump sums go into the subtotal before markup', () => {
+  const base = computeEstimate({ ...DEFAULTS, markupPct: 0 });
+  const withLs = computeEstimate({ ...DEFAULTS, markupPct: 0, detailingCost: 1200, installationCost: 3500 });
+  assert.equal(withLs.costs.detailing, 1200);
+  assert.equal(withLs.costs.installation, 3500);
+  near(withLs.costs.subtotal - base.costs.subtotal, 4700, 1e-6);
+  near(withLs.costs.total - base.costs.total, 4700, 1e-6);
+  near(withLs.costs.subtotal,
+    withLs.costs.steel + withLs.costs.treads + withLs.costs.labour + 1200 + 3500, 1e-6);
+
+  const base10 = computeEstimate({ ...DEFAULTS, markupPct: 10 });
+  const withLs10 = computeEstimate({ ...DEFAULTS, markupPct: 10, detailingCost: 1200, installationCost: 3500 });
+  near(withLs10.costs.subtotal - base10.costs.subtotal, 4700, 1e-6);
+  near(withLs10.costs.markup - base10.costs.markup, 470, 1e-6);
+  near(withLs10.costs.total - base10.costs.total, 4700 * 1.1, 1e-6);
+  // Form text works too.
+  const txt = computeEstimate({ ...DEFAULTS, detailingCost: '1200', installationCost: '3500' });
+  assert.equal(txt.costs.detailing, 1200);
+  assert.equal(txt.costs.installation, 3500);
+});
+
+test('garbage in the new keys never produces NaN', () => {
+  for (const v of ['', 'abc', NaN, Infinity, -500, null, undefined]) {
+    const r = computeEstimate({ ...DEFAULTS, detailingCost: v, installationCost: v });
+    assertAllFinite(r);
+    assert.equal(r.costs.detailing, 0, String(v));
+    assert.equal(r.costs.installation, 0, String(v));
+  }
+  for (const st of [{}, undefined, null, { orientation: 'straight', treads1: 'abc', stringersPerFlight: NaN },
+    { landingCount: 'x', beamXCount: Infinity, beamYCount: -3, treads2: null }]) {
+    const h = standardLabourHours(st);
+    assert.ok(Number.isFinite(h), String(h));
+    assert.ok(h >= 0);
+  }
+  assert.equal(standardLabourHours({}), 0);
 });
 
 test("'straight' has 1 flight and ignores treads2; other orientations have 2", () => {

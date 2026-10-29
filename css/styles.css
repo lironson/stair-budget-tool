@@ -15,14 +15,17 @@
  *   in either app, change it in the other too.
  *
  * HOW IT CONNECTS
- *   index.html uses these classes; js/app.js only toggles the `hidden` attribute and
- *   writes text. js/plan.js reads the --plan-* tokens below inside the SVG.
+ *   index.html uses these classes; js/app.js only toggles the `hidden` attribute,
+ *   writes text and restores each section's `open` state. js/plan.js reads the
+ *   --plan-* tokens below inside the SVG.
  *
  * HOW TO EDIT
  *   - Colours: change the tokens in section 1 only. Component rules never use
  *     literal colours, so light, dark and print all follow.
  *   - Plan colours: the --plan-* tokens (light and dark blocks).
  *   - Column widths / breakpoint: section 4 (900px breakpoint).
+ *   - Collapsible input sections (<details class="section">, summary heading,
+ *     .section-sum text shown only when collapsed, .chevron): section 5.
  *   - Theme: data-theme="light" | "dark" on <html>, set by the inline script in
  *     index.html and the "Dark mode" switch (localStorage key 'theme').
  */
@@ -220,26 +223,91 @@ h1 i { font-style: normal; color: var(--accent); }
   min-width: 0;
 }
 
-fieldset {
-  margin: 0;
-  padding: 0;
-  padding-block: 14px 18px;
-  border: 0;
+/* --- Collapsible sections: <details class="section"> per input group ---
+   The <summary> is the group heading (title · collapsed summary · chevron) and
+   the click target. Sections are separated by 1px --faint rules, not cards. */
+.section {
   border-top: 1px solid var(--faint);
   min-width: 0;
 }
-fieldset:first-child { border-top: 0; padding-top: 0; }
+.section:first-child { border-top: 0; }
 
-/* Legend floats awkwardly by default; make it a block heading. */
-legend {
-  float: left;
-  width: 100%;
-  padding: 0;
-  margin-bottom: 12px;
-  color: var(--ink);
-  font-size: 14px;
+.section > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding-block: 14px;
+  list-style: none;          /* Firefox: no disclosure triangle */
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-legend + * { clear: left; }
+.section:first-child > summary { padding-top: 0; }
+.section > summary::-webkit-details-marker { display: none; }  /* Safari */
+.section > summary::marker { content: ""; }
+.section > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Title: same uppercase Barlow Condensed voice the legends had. */
+.section-title {
+  flex: none;
+  font: 600 14px var(--f-display);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* One-line summary of the group's values; only shown while collapsed. */
+.section-sum {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;         /* wraps onto a second line on phones, never cut off */
+  font: 500 12px/1.4 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.section[open] > summary .section-sum { display: none; }
+
+/* Square chevron (same drawing as the select chevron): right when closed,
+   down when open. The rotation is turned off under prefers-reduced-motion. */
+.chevron {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 5px 0 auto;
+  border-right: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  transform: rotate(-45deg);
+  transition: transform .15s, border-color .15s;
+}
+.section[open] > summary .chevron { transform: translateY(-2px) rotate(45deg); }
+/* Hover in orange (Rolodex), only for real pointers so a tap doesn't leave it lit. */
+@media (hover: hover) {
+  .section > summary:hover .section-title,
+  .section > summary:hover .chevron { color: var(--accent); border-color: var(--accent); }
+}
+
+fieldset {
+  margin: 0;
+  padding: 0 0 18px;
+  border: 0;
+  min-width: 0;
+}
+
+/* Legends stay in the markup for screen readers (they name each group of
+   inputs); on screen the <summary> shows the title instead. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 
 .fields {
   clear: left;
@@ -555,43 +623,156 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   *,
   *::before,
   *::after { transition: none !important; animation: none !important; }
+  .chevron { transition: none; }  /* section chevrons snap open/closed */
 }
 
 /* =========================================================================
-   12. PRINT  (plan + estimate in black on white; no inputs, no buttons)
+   12. PRINT  — exactly ONE Letter page (docs/ARCHITECTURE.md §5 "Print")
+   Order on paper: compact header · plan sheet · estimate (total + summary,
+   warnings, table) · disclaimer and example-values note in small print.
+   Height budget (10in of printable height): header ~0.5in, plan 4.2in + title
+   strip, estimate ~3.5in (12 table rows), small print ~0.3in. That leaves ~1.4in
+   spare, which all 8 possible warnings use up almost entirely (measured: 9.94in).
+
+   TO GIVE THE PLAN MORE OR LESS ROOM: change --print-plan-h below. Lower it
+   freely (4.0in is fine). 4.2in is the most that still fits with every warning
+   showing; with no warnings up to ~5.5in fits. The svg uses preserveAspectRatio
+   "meet", so any drawing (25-tread L, 30-tread straight run…) scales down to fit
+   that box instead of overflowing. If you add table rows, warnings or make the
+   plan taller, re-check that print preview still shows one page.
    ========================================================================= */
 
+/* Letter, 0.5in margins all round: 7.5in × 10in of printable area. */
+@page {
+  size: letter;
+  margin: 0.5in;
+}
+
 @media print {
-  /* Force black-on-white whatever theme is active on screen. */
+  /* Light tokens, black on white, even when data-theme="dark" is set: the
+     [data-theme] selector matches both themes with the same specificity as the
+     dark block, and comes later, so it wins. --accent becomes ink so the "$",
+     the h1 period and the warning bar print black; only the plan's dimension
+     lines and figures keep the orange (--plan-dim), where it reads well. */
   :root,
   :root[data-theme] {
+    --print-plan-h: 4.2in;  /* plan drawing height: the main knob, see above */
+
     --bg: #ffffff;
     --ink: #000000;
     --muted: #444444;
-    --faint: #999999;
+    --faint: #bbbbbb;
     --accent: #000000;
     --on-accent: #ffffff;
     --plan-paper: #ffffff;
     --plan-ink: #000000;
     --plan-steel: #000000;
-    --plan-muted: #555555;
-    --plan-dim: #000000;
-    --plan-landing: #ffffff;
+    --plan-muted: #666666;
+    --plan-dim: #ff4f00;
+    --plan-landing: #f4f4f4;
     color-scheme: light;
   }
 
-  .inputs,
-  .actions,
-  .site-footer .switch,
-  .estimate > .note { display: none !important; }
+  html, body { background: #ffffff; color: #000000; }
+  body { font-size: 9pt; line-height: 1.3; }
 
-  .page { max-width: none; padding-block: 0; gap: 12px; }
-  .layout { display: block; }
-  .output { display: block; position: static; }
-  .sheet { break-inside: avoid; margin-bottom: 16px; }
-  #plan { max-height: 13cm; }
+  /* Hide everything interactive: the input form and its collapsible sections,
+     buttons, the dark-mode switch and any stray form control. */
+  .inputs,
+  details.section,
+  .actions,
+  button,
+  .switch,
+  input,
+  select { display: none !important; }
+
+  /* One plain column; undo the screen grid, the sticky output column, the
+     narrow-screen reordering (display: contents) and every vh-based height,
+     so nothing can push content onto a second page. */
+  .page {
+    max-width: none;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    gap: 10px;
+  }
+  .layout { display: block; min-height: 0; }
+  .output {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: static;
+    min-height: 0;
+  }
+
+  /* --- Compact header: small logo + title, subtitle in small print --- */
+  .site-header { gap: 12px; }
+  .logo {
+    width: 0.9in;
+    height: 0.45in;
+    /* The logo is an ink-filled box seen through a PNG mask. Browsers drop
+       background colours when printing unless told to keep them. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* file:// fallback <img>: always inverted to black on paper, even in dark mode. */
+  .logo--file img,
+  :root[data-theme="dark"] .logo--file img { filter: invert(1); }
+  .brand-text { gap: 2px; }
+  h1 { font-size: 16pt; }
+  .subtitle { font-size: 7.5pt; }
+
+  /* --- Plan sheet: full content width, fixed-height box (see top). --- */
+  .sheet { break-inside: avoid; page-break-inside: avoid; }
+  .sheet-frame { border-color: var(--faint); }
+  #plan {
+    width: 100%;
+    height: var(--print-plan-h);
+    max-height: none;
+    aspect-ratio: auto;
+  }
+  .tb-cell { padding: 2px 8px; font-size: 7.5pt; }
+
+  /* --- Estimate --- */
+  .estimate { gap: 6px; }
+
+  /* "Budget estimate" label on its own line, then the grand total and the
+     summary side by side to save height. */
+  .estimate-head {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 14px;
+    padding-top: 6px;
+  }
+  .estimate-head > .label { flex: 0 0 100%; font-size: 7.5pt; }
+  .grand-total { flex: none; font-size: 18pt; }
+  .summary { flex: 1 1 0; min-width: 0; font-size: 8.5pt; }
+
+  .warnings { font-size: 8.5pt; gap: 1px; padding-left: 8px; border-left-width: 2px; }
+
+  /* Table at ~8.5pt with tight rows; the detail line sits after the item name
+     on the same line instead of under it, which halves each row's height. */
   .table-wrap { overflow: visible; }
-  .breakdown { min-width: 0; }
+  .breakdown {
+    min-width: 0;
+    font-size: 8.5pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .breakdown th,
+  .breakdown td { padding: 1.5px 8px; line-height: 1.25; }
+  .breakdown thead th { padding-bottom: 2px; font-size: 7.5pt; }
+  .breakdown .num { font-size: 8.5pt; }
+  .breakdown thead .num { font-size: 7.5pt; }
   .breakdown tr { break-inside: avoid; }
-  .grand-total { font-size: 28px; }
+  .item-detail { display: inline; margin-left: .6em; font-size: 7.5pt; }
+  .breakdown tr.row-sub .item-name,
+  .breakdown tr.row-total .item-name { font-size: 8pt; }
+  .breakdown tr.row-total .num { font-size: 10pt; }
+
+  /* --- Small print at the bottom: example-values note + disclaimer --- */
+  .estimate > .note { font-size: 7pt; }
+  .site-footer { display: block; padding-top: 4px; }
+  .disclaimer { font-size: 7pt; }
 }

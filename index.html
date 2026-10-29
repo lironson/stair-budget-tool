@@ -4,7 +4,8 @@
   =======================================================
 
   WHAT THIS FILE DOES
-    The page markup: the header, the input form (left column), the live plan view
+    The page markup: the header, the input form (left column, in collapsible
+    sections), the live plan view
     <svg id="plan"> and the estimate (right column), and the footer.
     It holds no logic and no prices; everything is filled in by the scripts.
 
@@ -24,6 +25,19 @@
     - Add an orientation: add an <option> to #orientation, then handle it in
       js/calc.js and js/plan.js (see docs/ARCHITECTURE.md, "How to…").
     - Wrapper ids starting with "field-" are shown/hidden by app.js; keep them.
+    - Input groups are collapsible sections, in this order: Layout, Stringers,
+      Landings, Material pricing, Labour, Detailing, Installation, Markup. Each is
+        <details class="section" id="sec-NAME" open>
+          <summary> title, <span class="section-sum" id="sum-NAME">, chevron </summary>
+          <fieldset> <legend class="visually-hidden">title</legend> fields </fieldset>
+        </details>
+      The legend is hidden on screen (the summary shows the title) but still names
+      the group for screen readers. The sum-NAME text is filled by app.js and only
+      shows while the section is collapsed.
+    - Add a section: copy one <details class="section"> block, give it a new
+      id="sec-NAME" and its span id="sum-NAME", then add a NAME entry to
+      SECTION_SUMMARIES in js/app.js (the one-line text shown when collapsed).
+      Open/closed state is remembered per viewer automatically (app.js).
     - Landings have two beam groups (div.subgroup): X beams run ACROSS the stair
       (ids beamX*, the old "landing channels") and Y beams run ALONG it, in flight
       1's direction of travel (ids beamY*). Each has a section, custom lb/ft, count,
@@ -64,305 +78,400 @@
     <main class="layout">
 
       <!-- ===== INPUTS (left column on desktop; second on phones) =====
-           Every input id is a state key (see DEFAULTS in js/calc.js). -->
+           Every input id is a state key (see DEFAULTS in js/calc.js).
+           Each group is a <details class="section" id="sec-…"> (see HOW TO EDIT). -->
       <form id="inputs" class="inputs" autocomplete="off" novalidate aria-label="Stair inputs">
 
         <!-- --- Layout: orientation and geometry --- -->
-        <fieldset>
-          <legend>Layout</legend>
-          <div class="fields">
-            <div class="field field--full">
-              <label for="orientation">Orientation</label>
-              <div class="select-wrap">
-                <select id="orientation">
-                  <option value="straight">Straight run</option>
-                  <option value="inline">Straight with mid landing</option>
-                  <option value="L-left">L-stair, turn left</option>
-                  <option value="L-right">L-stair, turn right</option>
-                  <option value="U-left">U-stair, return left</option>
-                  <option value="U-right">U-stair, return right</option>
-                </select>
+        <details class="section" id="sec-layout" open>
+          <summary>
+            <span class="section-title">Layout</span>
+            <span class="section-sum" id="sum-layout"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Layout</legend>
+            <div class="fields">
+              <div class="field field--full">
+                <label for="orientation">Orientation</label>
+                <div class="select-wrap">
+                  <select id="orientation">
+                    <option value="straight">Straight run</option>
+                    <option value="inline">Straight with mid landing</option>
+                    <option value="L-left">L-stair, turn left</option>
+                    <option value="L-right">L-stair, turn right</option>
+                    <option value="U-left">U-stair, return left</option>
+                    <option value="U-right">U-stair, return right</option>
+                  </select>
+                </div>
               </div>
-            </div>
 
-            <div class="field">
-              <label for="treads1">Treads, flight 1</label>
-              <div class="input-unit">
-                <input id="treads1" type="number" inputmode="numeric" min="0" step="1">
-                <span class="unit">ea</span>
+              <div class="field">
+                <label for="treads1">Treads, flight 1</label>
+                <div class="input-unit">
+                  <input id="treads1" type="number" inputmode="numeric" min="0" step="1">
+                  <span class="unit">ea</span>
+                </div>
               </div>
-            </div>
 
-            <div class="field" id="field-treads2">
-              <label for="treads2">Treads, flight 2</label>
-              <div class="input-unit">
-                <input id="treads2" type="number" inputmode="numeric" min="0" step="1">
-                <span class="unit">ea</span>
+              <div class="field" id="field-treads2">
+                <label for="treads2">Treads, flight 2</label>
+                <div class="input-unit">
+                  <input id="treads2" type="number" inputmode="numeric" min="0" step="1">
+                  <span class="unit">ea</span>
+                </div>
               </div>
-            </div>
 
-            <div class="field">
-              <label for="treadDepth">Tread depth</label>
-              <div class="input-unit">
-                <input id="treadDepth" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">in</span>
+              <div class="field">
+                <label for="treadDepth">Tread depth</label>
+                <div class="input-unit">
+                  <input id="treadDepth" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">in</span>
+                </div>
               </div>
-            </div>
 
-            <div class="field">
-              <label for="riserHeight">Riser height</label>
-              <div class="input-unit">
-                <input id="riserHeight" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">in</span>
+              <div class="field">
+                <label for="riserHeight">Riser height</label>
+                <div class="input-unit">
+                  <input id="riserHeight" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">in</span>
+                </div>
               </div>
-            </div>
 
-            <div class="field">
-              <label for="stairWidth">Stair width</label>
-              <div class="input-unit">
-                <input id="stairWidth" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-stairWidth">
-                <span class="unit">in</span>
+              <div class="field">
+                <label for="stairWidth">Stair width</label>
+                <div class="input-unit">
+                  <input id="stairWidth" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-stairWidth">
+                  <span class="unit">in</span>
+                </div>
+                <p class="hint" id="hint-stairWidth">Out-to-out of stringers</p>
               </div>
-              <p class="hint" id="hint-stairWidth">Out-to-out of stringers</p>
-            </div>
 
-            <div class="field">
-              <label for="landingDepth">Landing depth</label>
-              <div class="input-unit">
-                <input id="landingDepth" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-landingDepth">
-                <span class="unit">in</span>
+              <div class="field">
+                <label for="landingDepth">Landing depth</label>
+                <div class="input-unit">
+                  <input id="landingDepth" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-landingDepth">
+                  <span class="unit">in</span>
+                </div>
+                <p class="hint" id="hint-landingDepth">Along flight 1</p>
               </div>
-              <p class="hint" id="hint-landingDepth">Along flight 1</p>
-            </div>
 
-            <div class="field" id="field-wellGap">
-              <label for="wellGap">Well gap</label>
-              <div class="input-unit">
-                <input id="wellGap" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-wellGap">
-                <span class="unit">in</span>
+              <div class="field" id="field-wellGap">
+                <label for="wellGap">Well gap</label>
+                <div class="input-unit">
+                  <input id="wellGap" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-wellGap">
+                  <span class="unit">in</span>
+                </div>
+                <p class="hint" id="hint-wellGap">Between the two flights</p>
               </div>
-              <p class="hint" id="hint-wellGap">Between the two flights</p>
             </div>
-          </div>
-        </fieldset>
+          </fieldset>
+        </details>
 
         <!-- --- Stringers: section, count, allowance --- -->
-        <fieldset>
-          <legend>Stringers</legend>
-          <div class="fields">
-            <div class="field field--full">
-              <label for="stringerSection">Stringer section</label>
-              <div class="select-wrap">
-                <!-- Options are added by app.js from SECTIONS in js/calc.js -->
-                <select id="stringerSection"></select>
+        <details class="section" id="sec-stringers" open>
+          <summary>
+            <span class="section-title">Stringers</span>
+            <span class="section-sum" id="sum-stringers"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Stringers</legend>
+            <div class="fields">
+              <div class="field field--full">
+                <label for="stringerSection">Stringer section</label>
+                <div class="select-wrap">
+                  <!-- Options are added by app.js from SECTIONS in js/calc.js -->
+                  <select id="stringerSection"></select>
+                </div>
               </div>
-            </div>
 
-            <div class="field field--full" id="field-stringerCustomLbFt">
-              <label for="stringerCustomLbFt">Custom stringer weight</label>
-              <div class="input-unit">
-                <input id="stringerCustomLbFt" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">lb/ft</span>
+              <div class="field field--full" id="field-stringerCustomLbFt">
+                <label for="stringerCustomLbFt">Custom stringer weight</label>
+                <div class="input-unit">
+                  <input id="stringerCustomLbFt" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">lb/ft</span>
+                </div>
               </div>
-            </div>
 
-            <div class="field field--full">
-              <label for="stringersPerFlight">Stringers per flight</label>
-              <div class="select-wrap">
-                <select id="stringersPerFlight">
-                  <option value="2">2 — outer cranked</option>
-                  <option value="4">4 — 2 cranked + 2 inner</option>
-                </select>
+              <div class="field field--full">
+                <label for="stringersPerFlight">Stringers per flight</label>
+                <div class="select-wrap">
+                  <select id="stringersPerFlight">
+                    <option value="2">2 — outer cranked</option>
+                    <option value="4">4 — 2 cranked + 2 inner</option>
+                  </select>
+                </div>
               </div>
-            </div>
 
-            <div class="field field--full">
-              <label for="crankAllowance">Crank / bearing allowance</label>
-              <div class="input-unit">
-                <input id="crankAllowance" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-crankAllowance">
-                <span class="unit">in</span>
+              <div class="field field--full">
+                <label for="crankAllowance">Crank / bearing allowance</label>
+                <div class="input-unit">
+                  <input id="crankAllowance" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-crankAllowance">
+                  <span class="unit">in</span>
+                </div>
+                <p class="hint" id="hint-crankAllowance">Added to each stringer</p>
               </div>
-              <p class="hint" id="hint-crankAllowance">Added to each stringer</p>
             </div>
-          </div>
-        </fieldset>
+          </fieldset>
+        </details>
 
         <!-- --- Landings: count, then X beams (across) and Y beams (along) ---
              X = across flight 1's travel (the old "landing channels");
              Y = along flight 1's travel (landing edges, the U-stair well). -->
-        <fieldset>
-          <legend>Landings</legend>
-          <div class="fields">
-            <div class="field">
-              <label for="landingCount">Landings</label>
-              <div class="input-unit">
-                <input id="landingCount" type="number" inputmode="numeric" min="0" step="1" aria-describedby="hint-landingCount">
-                <span class="unit">ea</span>
-              </div>
-              <p class="hint" id="hint-landingCount">All the same size</p>
-            </div>
-          </div>
-
-          <!-- X beams: across the stair -->
-          <div class="subgroup" role="group" aria-labelledby="beamXTitle">
-            <h3 class="subgroup-title" id="beamXTitle">X beams — across the stair</h3>
-            <p class="hint subgroup-hint">Run across flight 1, spanning the landing width</p>
+        <details class="section" id="sec-landings" open>
+          <summary>
+            <span class="section-title">Landings</span>
+            <span class="section-sum" id="sum-landings"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Landings</legend>
             <div class="fields">
-              <div class="field field--full">
-                <label for="beamXSection">X beam section</label>
-                <div class="select-wrap">
-                  <!-- Options are added by app.js from SECTIONS in js/calc.js -->
-                  <select id="beamXSection"></select>
+              <div class="field">
+                <label for="landingCount">Landings</label>
+                <div class="input-unit">
+                  <input id="landingCount" type="number" inputmode="numeric" min="0" step="1" aria-describedby="hint-landingCount">
+                  <span class="unit">ea</span>
+                </div>
+                <p class="hint" id="hint-landingCount">All the same size</p>
+              </div>
+            </div>
+
+            <!-- X beams: across the stair -->
+            <div class="subgroup" role="group" aria-labelledby="beamXTitle">
+              <h3 class="subgroup-title" id="beamXTitle">X beams — across the stair</h3>
+              <p class="hint subgroup-hint">Run across flight 1, spanning the landing width</p>
+              <div class="fields">
+                <div class="field field--full">
+                  <label for="beamXSection">X beam section</label>
+                  <div class="select-wrap">
+                    <!-- Options are added by app.js from SECTIONS in js/calc.js -->
+                    <select id="beamXSection"></select>
+                  </div>
+                </div>
+
+                <div class="field field--full" id="field-beamXCustomLbFt">
+                  <label for="beamXCustomLbFt">Custom X beam weight</label>
+                  <div class="input-unit">
+                    <input id="beamXCustomLbFt" type="number" inputmode="decimal" min="0" step="any">
+                    <span class="unit">lb/ft</span>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="beamXCount">Beams / landing</label>
+                  <div class="input-unit">
+                    <input id="beamXCount" type="number" inputmode="numeric" min="0" step="1">
+                    <span class="unit">ea</span>
+                  </div>
+                </div>
+
+                <!-- X beam length: switch on = landing width (shown in #beamXLengthAutoValue) -->
+                <div class="field field--full field--switch">
+                  <label class="switch" for="beamXLengthAuto">
+                    <input type="checkbox" id="beamXLengthAuto" role="switch">
+                    <span class="track" aria-hidden="true"><span class="knob"></span></span>
+                    <span class="switch-label">Match landing width</span>
+                  </label>
+                  <output class="auto-value" id="beamXLengthAutoValue" for="beamXLengthAuto"></output>
+                </div>
+
+                <div class="field field--full" id="field-beamXLengthOverride">
+                  <label for="beamXLengthOverride">Beam length, each</label>
+                  <div class="input-unit">
+                    <input id="beamXLengthOverride" type="number" inputmode="decimal" min="0" step="any">
+                    <span class="unit">in</span>
+                  </div>
                 </div>
               </div>
+            </div>
 
-              <div class="field field--full" id="field-beamXCustomLbFt">
-                <label for="beamXCustomLbFt">Custom X beam weight</label>
+            <!-- Y beams: along the stair -->
+            <div class="subgroup" role="group" aria-labelledby="beamYTitle">
+              <h3 class="subgroup-title" id="beamYTitle">Y beams — along the stair</h3>
+              <p class="hint subgroup-hint">Run in flight 1's direction of travel — e.g. landing edges and the U-stair well</p>
+              <div class="fields">
+                <div class="field field--full">
+                  <label for="beamYSection">Y beam section</label>
+                  <div class="select-wrap">
+                    <!-- Options are added by app.js from SECTIONS in js/calc.js -->
+                    <select id="beamYSection"></select>
+                  </div>
+                </div>
+
+                <div class="field field--full" id="field-beamYCustomLbFt">
+                  <label for="beamYCustomLbFt">Custom Y beam weight</label>
+                  <div class="input-unit">
+                    <input id="beamYCustomLbFt" type="number" inputmode="decimal" min="0" step="any">
+                    <span class="unit">lb/ft</span>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="beamYCount">Beams / landing</label>
+                  <div class="input-unit">
+                    <input id="beamYCount" type="number" inputmode="numeric" min="0" step="1">
+                    <span class="unit">ea</span>
+                  </div>
+                </div>
+
+                <!-- Y beam length: switch on = landing depth (shown in #beamYLengthAutoValue) -->
+                <div class="field field--full field--switch">
+                  <label class="switch" for="beamYLengthAuto">
+                    <input type="checkbox" id="beamYLengthAuto" role="switch">
+                    <span class="track" aria-hidden="true"><span class="knob"></span></span>
+                    <span class="switch-label">Match landing depth</span>
+                  </label>
+                  <output class="auto-value" id="beamYLengthAutoValue" for="beamYLengthAuto"></output>
+                </div>
+
+                <div class="field field--full" id="field-beamYLengthOverride">
+                  <label for="beamYLengthOverride">Beam length, each</label>
+                  <div class="input-unit">
+                    <input id="beamYLengthOverride" type="number" inputmode="decimal" min="0" step="any">
+                    <span class="unit">in</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+        </details>
+
+        <!-- --- Material pricing: tread supply, steel price, connection allowance --- -->
+        <details class="section" id="sec-material" open>
+          <summary>
+            <span class="section-title">Material pricing</span>
+            <span class="section-sum" id="sum-material"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Material pricing</legend>
+            <p class="note">Example rates — replace with your own prices.</p>
+            <div class="fields">
+              <div class="field">
+                <label for="pricePerTread">Tread supply</label>
                 <div class="input-unit">
-                  <input id="beamXCustomLbFt" type="number" inputmode="decimal" min="0" step="any">
-                  <span class="unit">lb/ft</span>
+                  <input id="pricePerTread" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">$/tread</span>
                 </div>
               </div>
 
               <div class="field">
-                <label for="beamXCount">Beams / landing</label>
+                <label for="pricePerLb">Channel steel</label>
                 <div class="input-unit">
-                  <input id="beamXCount" type="number" inputmode="numeric" min="0" step="1">
-                  <span class="unit">ea</span>
+                  <input id="pricePerLb" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">$/lb</span>
                 </div>
               </div>
 
-              <!-- X beam length: switch on = landing width (shown in #beamXLengthAutoValue) -->
-              <div class="field field--full field--switch">
-                <label class="switch" for="beamXLengthAuto">
-                  <input type="checkbox" id="beamXLengthAuto" role="switch">
-                  <span class="track" aria-hidden="true"><span class="knob"></span></span>
-                  <span class="switch-label">Match landing width</span>
-                </label>
-                <output class="auto-value" id="beamXLengthAutoValue" for="beamXLengthAuto"></output>
-              </div>
-
-              <div class="field field--full" id="field-beamXLengthOverride">
-                <label for="beamXLengthOverride">Beam length, each</label>
+              <div class="field field--full">
+                <label for="connectionAllowancePct">Connections &amp; misc allowance</label>
                 <div class="input-unit">
-                  <input id="beamXLengthOverride" type="number" inputmode="decimal" min="0" step="any">
-                  <span class="unit">in</span>
+                  <input id="connectionAllowancePct" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-connectionAllowancePct">
+                  <span class="unit">%</span>
                 </div>
+                <p class="hint" id="hint-connectionAllowancePct">Clips, plates, angles, bolts, welds — % of steel weight</p>
               </div>
             </div>
-          </div>
+          </fieldset>
+        </details>
 
-          <!-- Y beams: along the stair -->
-          <div class="subgroup" role="group" aria-labelledby="beamYTitle">
-            <h3 class="subgroup-title" id="beamYTitle">Y beams — along the stair</h3>
-            <p class="hint subgroup-hint">Run in flight 1's direction of travel — e.g. landing edges and the U-stair well</p>
+        <!-- --- Labour: total shop hours x shop rate --- -->
+        <details class="section" id="sec-labour" open>
+          <summary>
+            <span class="section-title">Labour</span>
+            <span class="section-sum" id="sum-labour"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Labour</legend>
             <div class="fields">
-              <div class="field field--full">
-                <label for="beamYSection">Y beam section</label>
-                <div class="select-wrap">
-                  <!-- Options are added by app.js from SECTIONS in js/calc.js -->
-                  <select id="beamYSection"></select>
-                </div>
-              </div>
-
-              <div class="field field--full" id="field-beamYCustomLbFt">
-                <label for="beamYCustomLbFt">Custom Y beam weight</label>
+              <div class="field">
+                <label for="labourHours">Shop labour</label>
                 <div class="input-unit">
-                  <input id="beamYCustomLbFt" type="number" inputmode="decimal" min="0" step="any">
-                  <span class="unit">lb/ft</span>
+                  <input id="labourHours" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-labourHours">
+                  <span class="unit">hrs</span>
                 </div>
+                <p class="hint" id="hint-labourHours">Total shop hours</p>
               </div>
 
               <div class="field">
-                <label for="beamYCount">Beams / landing</label>
+                <label for="shopRate">Shop rate</label>
                 <div class="input-unit">
-                  <input id="beamYCount" type="number" inputmode="numeric" min="0" step="1">
-                  <span class="unit">ea</span>
-                </div>
-              </div>
-
-              <!-- Y beam length: switch on = landing depth (shown in #beamYLengthAutoValue) -->
-              <div class="field field--full field--switch">
-                <label class="switch" for="beamYLengthAuto">
-                  <input type="checkbox" id="beamYLengthAuto" role="switch">
-                  <span class="track" aria-hidden="true"><span class="knob"></span></span>
-                  <span class="switch-label">Match landing depth</span>
-                </label>
-                <output class="auto-value" id="beamYLengthAutoValue" for="beamYLengthAuto"></output>
-              </div>
-
-              <div class="field field--full" id="field-beamYLengthOverride">
-                <label for="beamYLengthOverride">Beam length, each</label>
-                <div class="input-unit">
-                  <input id="beamYLengthOverride" type="number" inputmode="decimal" min="0" step="any">
-                  <span class="unit">in</span>
+                  <input id="shopRate" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">$/hr</span>
                 </div>
               </div>
             </div>
-          </div>
-        </fieldset>
+          </fieldset>
+        </details>
 
-        <!-- --- Material pricing (example rates) --- -->
-        <fieldset>
-          <legend>Material pricing</legend>
-          <p class="note">Example rates — replace with yours.</p>
-          <div class="fields">
-            <div class="field">
-              <label for="pricePerTread">Tread supply</label>
-              <div class="input-unit">
-                <input id="pricePerTread" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">$/tread</span>
+        <!-- --- Detailing: shop drawings, one lump sum --- -->
+        <details class="section" id="sec-detailing" open>
+          <summary>
+            <span class="section-title">Detailing</span>
+            <span class="section-sum" id="sum-detailing"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Detailing</legend>
+            <div class="fields">
+              <div class="field">
+                <label for="detailingCost">Detailing</label>
+                <div class="input-unit">
+                  <input id="detailingCost" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-detailingCost">
+                  <span class="unit">$</span>
+                </div>
+                <p class="hint" id="hint-detailingCost">Shop drawings — lump sum</p>
               </div>
             </div>
+          </fieldset>
+        </details>
 
-            <div class="field">
-              <label for="pricePerLb">Channel steel</label>
-              <div class="input-unit">
-                <input id="pricePerLb" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">$/lb</span>
+        <!-- --- Installation: erection crew, equipment, travel, one lump sum --- -->
+        <details class="section" id="sec-installation" open>
+          <summary>
+            <span class="section-title">Installation</span>
+            <span class="section-sum" id="sum-installation"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Installation</legend>
+            <div class="fields">
+              <div class="field">
+                <label for="installationCost">Installation</label>
+                <div class="input-unit">
+                  <input id="installationCost" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-installationCost">
+                  <span class="unit">$</span>
+                </div>
+                <p class="hint" id="hint-installationCost">Erection crew, equipment, travel — lump sum</p>
               </div>
             </div>
+          </fieldset>
+        </details>
 
-            <div class="field field--full">
-              <label for="connectionAllowancePct">Connections &amp; misc allowance</label>
-              <div class="input-unit">
-                <input id="connectionAllowancePct" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-connectionAllowancePct">
-                <span class="unit">%</span>
-              </div>
-              <p class="hint" id="hint-connectionAllowancePct">Clips, plates, angles, bolts, welds — % of steel weight</p>
-            </div>
-          </div>
-        </fieldset>
-
-        <!-- --- Labour & markup (example rates) --- -->
-        <fieldset>
-          <legend>Labour &amp; markup</legend>
-          <div class="fields">
-            <div class="field">
-              <label for="labourHours">Shop labour</label>
-              <div class="input-unit">
-                <input id="labourHours" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">hrs</span>
-              </div>
-            </div>
-
-            <div class="field">
-              <label for="shopRate">Shop rate</label>
-              <div class="input-unit">
-                <input id="shopRate" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">$/hr</span>
+        <!-- --- Markup: % on the subtotal --- -->
+        <details class="section" id="sec-markup" open>
+          <summary>
+            <span class="section-title">Markup</span>
+            <span class="section-sum" id="sum-markup"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Markup</legend>
+            <div class="fields">
+              <div class="field">
+                <label for="markupPct">Markup</label>
+                <div class="input-unit">
+                  <input id="markupPct" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-markupPct">
+                  <span class="unit">%</span>
+                </div>
+                <p class="hint" id="hint-markupPct">On the subtotal</p>
               </div>
             </div>
-
-            <div class="field">
-              <label for="markupPct">Markup</label>
-              <div class="input-unit">
-                <input id="markupPct" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">%</span>
-              </div>
-            </div>
-          </div>
-        </fieldset>
+          </fieldset>
+        </details>
       </form>
 
       <!-- ===== OUTPUT (right column on desktop): plan sheet, then estimate =====

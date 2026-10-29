@@ -5,9 +5,10 @@
  * WHAT THIS FILE DOES
  *   Holds the channel section table (SECTIONS), the starting form values (DEFAULTS),
  *   and all the arithmetic: stair geometry, stringer and landing-beam weights (X beams
- *   across the stair, Y beams along it), the cost roll-up, and the warnings. It also
- *   has the small formatters the page uses to show feet-inches, dollars and plain
- *   numbers.
+ *   across the stair, Y beams along it), the cost roll-up (steel, treads, shop labour,
+ *   the detailing and installation lump sums, markup), and the warnings. It also
+ *   works out the default shop hours (standardLabourHours()) and has the small
+ *   formatters the page uses to show feet-inches, dollars and plain numbers.
  *
  *   There is NO page / DOM code in here. It only takes numbers in and gives numbers
  *   back, so it can be tested on its own with `node --test tests/`.
@@ -39,6 +40,11 @@
  *     landingBeamLength(state, 'x' | 'y') gives the length of one beam on either axis.
  *   - Change the default values or example rates: edit DEFAULTS below. These are the
  *     values the page starts with and the "Reset" button goes back to.
+ *   - The default labour hours are not typed into DEFAULTS: they are worked out once
+ *     from the default stair by standardLabourHours() (see DEFAULTS.labourHours below).
+ *     After that labourHours is a plain number the user edits.
+ *   - Detailing (shop drawings) and installation (erection) are each one lump sum in
+ *     dollars (detailingCost, installationCost), added to the subtotal before markup.
  *   - Add a cost line (e.g. galvanizing):
  *       1. add a key to DEFAULTS (and an <input> with the same id in index.html),
  *       2. compute it in computeEstimate() in the "Costs" step and add it to `costs`
@@ -118,9 +124,11 @@ const DEFAULTS = {
   pricePerTread: 85,           // $ per tread (pan, grating, etc.)
   pricePerLb: 1.6,             // $ per lb of channel steel
   connectionAllowancePct: 15,  // % extra steel weight for clips, plates, angles, bolts, welds
-  labourHours: 40,             // total shop hours
-  shopRate: 110,               // $ per hour
-  markupPct: 10,               // % applied to the subtotal
+  labourHours: 0,              // total shop hours; set below from standardLabourHours(DEFAULTS)
+  shopRate: 100,               // $ per hour
+  detailingCost: 0,            // $ lump sum — detailing / shop drawings
+  installationCost: 0,         // $ lump sum — installation / erection
+  markupPct: 0,                // % applied to the subtotal
 };
 
 /**
@@ -201,6 +209,55 @@ function landingBeamLength(state, axis) {
 }
 
 /**
+ * Count the pieces of a stair: flights, treads per flight, stringers and landing beams.
+ * computeEstimate() and standardLabourHours() both use this, so they always count the
+ * same way. Bad or missing inputs count as 0.
+ *
+ * @param {object} state  the stair state
+ * @returns {object} { flightCount, treadCounts[], stringersPerFlight, stringerCount,
+ *                     landingCount, beamXCount, beamYCount }  (beam counts = all landings)
+ */
+function stairCounts(state) {
+  const s = state || {};
+  // A straight stair is one flight to a top landing; every other layout has two flights.
+  const flightCount = String(s.orientation || '') === 'straight' ? 1 : 2;
+  const treadCounts = flightCount === 1 ? [calcInt(s.treads1)] : [calcInt(s.treads1), calcInt(s.treads2)];
+  const stringersPerFlight = calcInt(s.stringersPerFlight);
+  const landingCount = calcInt(s.landingCount);
+  return {
+    flightCount,
+    treadCounts,
+    stringersPerFlight,
+    stringerCount: flightCount * stringersPerFlight, // every flight gets the same number
+    landingCount,
+    // Every landing gets the same beams: landings x beams per landing.
+    beamXCount: landingCount * calcInt(s.beamXCount),
+    beamYCount: landingCount * calcInt(s.beamYCount),
+  };
+}
+
+// Internal pricing rule for the default shop hours. Do not show these rates on the page or in the docs.
+const LABOUR_STD = { perStringer: 6.5, perTread: 1, perBeam: 1.5 };
+
+/**
+ * Standard shop hours for a stair, from its stringer, tread and landing-beam counts.
+ * Used only to set DEFAULTS.labourHours. Never returns NaN; bad inputs count as 0.
+ *
+ * @param {object} state  the stair state
+ * @returns {number} shop hours (>= 0)
+ */
+function standardLabourHours(state) {
+  const c = stairCounts(state);
+  const treads = c.treadCounts.reduce((sum, t) => sum + t, 0);
+  return c.stringerCount * LABOUR_STD.perStringer
+    + treads * LABOUR_STD.perTread
+    + (c.beamXCount + c.beamYCount) * LABOUR_STD.perBeam;
+}
+
+// The default shop hours come from the default stair (worked out once, at load).
+DEFAULTS.labourHours = standardLabourHours(DEFAULTS);
+
+/**
  * Work out the full estimate: geometry, steel weights, costs and warnings.
  * Never throws and never returns NaN; bad or missing inputs count as 0.
  *
@@ -213,7 +270,8 @@ function landingBeamLength(state, axis) {
  *   beamsX         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (X landing beams)
  *   beamsY         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (Y landing beams)
  *   baseSteelLb, allowanceLb, totalSteelLb  (lb)
- *   costs          { steel, treads, labour, subtotal, markup, total }  ($)
+ *   costs          { steel, treads, labour, detailing, installation, subtotal, markup, total }  ($)
+ *                  detailing / installation are the detailingCost / installationCost lump sums
  *   warnings[]     short plain-English strings
  */
 function computeEstimate(state) {
@@ -227,11 +285,11 @@ function computeEstimate(state) {
   const stairWidth = calcNum(s.stairWidth);
   const landingDepth = calcNum(s.landingDepth);
   const crankAllowance = calcNum(s.crankAllowance);
-  const stringersPerFlight = calcInt(s.stringersPerFlight);
 
+  // Piece counts (flights, treads, stringers, landing beams), see stairCounts().
   // A straight stair is one flight to a top landing; every other layout has two flights.
-  const flightCount = orientation === 'straight' ? 1 : 2;
-  const treadCounts = flightCount === 1 ? [calcInt(s.treads1)] : [calcInt(s.treads1), calcInt(s.treads2)];
+  const counts = stairCounts(s);
+  const { treadCounts, stringersPerFlight } = counts;
 
   // ---- Geometry, one flight at a time ----
   const flights = treadCounts.map((treads) => {
@@ -256,7 +314,7 @@ function computeEstimate(state) {
   // ---- Stringers ----
   const stringerLbFt = sectionWeight(s.stringerSection, s.stringerCustomLbFt);
   // Every flight gets the same number of stringers.
-  const stringerCount = flightCount * stringersPerFlight;
+  const stringerCount = counts.stringerCount;
   // Total length of all stringers in feet: each flight's stringer length times how many
   // stringers that flight has, divided by 12 to go from inches to feet.
   const stringerLengthFt = flights.reduce((sum, f) => sum + f.stringerLength * stringersPerFlight, 0) / 12;
@@ -269,14 +327,12 @@ function computeEstimate(state) {
   };
 
   // ---- Landing beams (X across the stair, Y along it) ----
-  const landingCount = calcInt(s.landingCount);
   // One axis at a time. Every landing gets the same beams, so the count is landings x
-  // beams per landing. By default an X beam is as long as the landing is wide and a
-  // Y beam as long as the landing is deep; the shop can type its own length instead
-  // (beamXLengthAuto / beamYLengthAuto = false), see landingBeamLength().
-  function landingBeams(section, customLbFt, perLanding, axis) {
+  // beams per landing (from stairCounts()). By default an X beam is as long as the
+  // landing is wide and a Y beam as long as the landing is deep; the shop can type its
+  // own length instead (beamXLengthAuto / beamYLengthAuto = false), see landingBeamLength().
+  function landingBeams(section, customLbFt, count, axis) {
     const lbft = sectionWeight(section, customLbFt);
-    const count = landingCount * calcInt(perLanding);
     const eachLengthIn = landingBeamLength(s, axis);
     const lengthFt = (count * eachLengthIn) / 12; // all beams on this axis, inches -> feet
     return {
@@ -288,8 +344,8 @@ function computeEstimate(state) {
       weightLb: lengthFt * lbft, // weight = feet x lb/ft
     };
   }
-  const beamsX = landingBeams(s.beamXSection, s.beamXCustomLbFt, s.beamXCount, 'x');
-  const beamsY = landingBeams(s.beamYSection, s.beamYCustomLbFt, s.beamYCount, 'y');
+  const beamsX = landingBeams(s.beamXSection, s.beamXCustomLbFt, counts.beamXCount, 'x');
+  const beamsY = landingBeams(s.beamYSection, s.beamYCustomLbFt, counts.beamYCount, 'y');
 
   // ---- Steel weight ----
   // Main members only (stringers + X and Y landing beams).
@@ -303,10 +359,12 @@ function computeEstimate(state) {
   const steel = totalSteelLb * calcNum(s.pricePerLb);           // material: steel bought by the lb
   const treadsCost = totalTreads * calcNum(s.pricePerTread);    // material: treads bought by the piece
   const labour = calcNum(s.labourHours) * calcNum(s.shopRate);  // shop hours x hourly rate
-  const subtotal = steel + treadsCost + labour;
+  const detailing = calcNum(s.detailingCost);                   // lump sum: shop drawings
+  const installation = calcNum(s.installationCost);             // lump sum: erection
+  const subtotal = steel + treadsCost + labour + detailing + installation;
   const markup = (subtotal * calcNum(s.markupPct)) / 100;       // overhead / profit on top of cost
   const total = subtotal + markup;
-  const costs = { steel, treads: treadsCost, labour, subtotal, markup, total };
+  const costs = { steel, treads: treadsCost, labour, detailing, installation, subtotal, markup, total };
 
   // ---- Warnings (gentle checks, not a code review) ----
   // 7 3/4" is a common residential maximum and 7" a common commercial one; 7 7/8" is
@@ -411,4 +469,4 @@ function fmtNum(n, decimals = 0) {
   return text.replace(/^-(?=0(\.0+)?$)/, ''); // never show "-0"
 }
 
-if (typeof module !== 'undefined') module.exports = { SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, computeEstimate, fmtFtIn, fmtMoney, fmtNum };
+if (typeof module !== 'undefined') module.exports = { SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };
