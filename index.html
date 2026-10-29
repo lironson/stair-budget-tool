@@ -7,7 +7,7 @@
     The page markup: the header, the input form (left column, in collapsible
     sections, with a "Collapse all / Expand all" button above them), the plan
     sheet (the live plan view <svg id="plan"> and, with 2+ landings, the
-    upper-landing view <svg id="planUpper"> beside it) and the estimate (right
+    upper-landing view <svg id="planUpper"> below it, same scale) and the estimate (right
     column), and the footer.
     It holds no logic and no prices; everything is filled in by the scripts.
 
@@ -49,8 +49,13 @@
       before the first <details class="section">.
     - Plan sheet: .sheet-frame holds <svg id="plan"> and <div id="planUpperWrap">
       (the upper-landing view, hidden by app.js when there are fewer than 2
-      landings). CSS puts them side by side (about 62 / 38) and stacks them on
-      phones; keep both inside .sheet-frame.
+      landings). CSS stacks them on screen and puts them side by side in
+      print; both share one scale via the --vb-* custom properties that app.js sets
+      on .sheet-frame (see docs/ARCHITECTURE.md, "Drawing scale"). Keep both inside
+      .sheet-frame.
+    - Landings: #landingCount is a <select> with options 1 and 2 only (app.js
+      disables 2 for a straight run).
+    - Logo: .logo (CSS mask, screen) and .logo-print (<img>, print only); keep both.
     - Landings have two beam groups (div.subgroup): X beams run ACROSS the stair
       (ids beamX*, the old "landing channels") and Y beams run ALONG it, in flight
       1's direction of travel (ids beamY*). Each has a section, custom lb/ft, count,
@@ -81,6 +86,9 @@
     <!-- ===== HEADER: logo | rule | title ===== -->
     <header class="site-header">
       <div class="logo" role="img" aria-label="Grizzly Metal Fabrication"></div>
+      <!-- Print-only logo: black on transparent. Safari doesn't print CSS masks, so
+           paper uses this <img>; on screen it is hidden. -->
+      <img class="logo-print" src="assets/grizzly-logo-print.png" alt="Grizzly Metal Fabrication">
       <div class="brand-rule" aria-hidden="true"></div>
       <div class="brand-text">
         <h1>Stair Budget Tool<i>.</i></h1>
@@ -244,9 +252,11 @@
             <div class="fields">
               <div class="field">
                 <label for="landingCount">Landings</label>
-                <div class="input-unit">
-                  <input id="landingCount" type="number" inputmode="numeric" min="0" step="1" aria-describedby="hint-landingCount">
-                  <span class="unit">ea</span>
+                <div class="select-wrap">
+                  <select id="landingCount" aria-describedby="hint-landingCount">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                  </select>
                 </div>
                 <p class="hint" id="hint-landingCount">All the same size</p>
               </div>
@@ -578,7 +588,7 @@
 
         <!-- --- Plan sheet: live drawing(s) + title strip ---
              The frame holds the main plan and, with 2+ landings, the upper-landing
-             view beside it (stacked under the plan on phones). -->
+             view below it on screen (beside it in print), both at the same scale. -->
         <section class="sheet" aria-labelledby="sheetTitle">
           <div class="sheet-frame">
             <!-- renderPlan() in js/plan.js draws into this svg -->

@@ -36,8 +36,9 @@ and works out material and labour cost as you type.
 - **One-page print**: *Print estimate* gives a single Letter page with the plan and the
   cost breakdown.
 - **Live plan view** in drawing style: stringers, landing beams, tread lines, UP arrows
-  and dimension strings, all redrawn on every change. With 2 or more landings, a second
-  view shows the upper landing with the flight arriving into it.
+  and dimension strings, all redrawn on every change. Choose 1 or 2 landings (a straight
+  run has 1). With 2, a second view shows the upper landing with the flight arriving into
+  it, at the same scale: below the stair plan on screen, beside it on the printout.
 - Your last inputs and rates are remembered in the browser (localStorage).
 
 > The rates that ship with the page are **example values**. Replace them with your own.

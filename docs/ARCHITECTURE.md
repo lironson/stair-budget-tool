@@ -49,7 +49,7 @@ All lengths inside `state` and inside the calculations are **inches**. Weights a
 | `stringerCustomLbFt` | number | `20` | lb/ft used when `stringerSection === 'Custom'` |
 | `stringersPerFlight` | int | `2` | `2` = two outer cranked stringers; `4` = 2 cranked outer + 2 inner (PDF examples 1 & 4) |
 | `crankAllowance` | number (in) | `12` | extra length added to **each** stringer for cranked ends / bearing |
-| `landingCount` | int | `1` | number of landings to price (all the same size) |
+| `landingCount` | int | `1` | number of landings: **1 or 2 only** (a `<select>`). `straight` is always 1. `calc.js` clamps any other value: < 1 → 1, > 2 → 2, straight → 1 |
 | `deckRatePerSqFt` | number $/sq.ft | `0` | landing deck, priced on landingWidth × landingDepth × landingCount; taxed with materials (PST) |
 | `beamXSection` | string | `'C8x11.2'` | **X landing beams** (run *across* the stair, i.e. across flight 1's travel): a `SECTIONS` name, or `'Custom'` |
 | `beamXCustomLbFt` | number | `11` | lb/ft used when `beamXSection === 'Custom'` |
@@ -230,8 +230,9 @@ Other ids:
 | id | element | used for |
 |---|---|---|
 | `plan` | `<svg>` | `renderPlan` target |
-| `planUpperWrap` | element | holds the upper-landing view; `hidden` when `landingCount < 2`. Sits to the right of `#plan` inside the plan sheet (about 62 / 38), stacked under 600px wide; side by side in print |
+| `planUpperWrap` | element | holds the upper-landing view; `hidden` when `landingCount < 2`. On screen it sits **below** `#plan` at the same scale; in print the two sit side by side at the same scale (see "Drawing scale") |
 | `planUpper` | `<svg>` | `renderUpperLanding` target |
+| `.logo-print` | `<img>` | print-only logo, `assets/grizzly-logo-print.png` (black on transparent). Shown in print instead of the CSS-mask `.logo`, which iPhone Safari prints as a black block |
 | `toggleAllBtn` | `<button>` | above the first input section: "Collapse all" while any section is open, otherwise "Expand all"; sets every `details.section` `open` (their `toggle` handlers save the state) |
 | `results` | `<tbody>` | estimate breakdown rows, filled by `app.js` |
 | `grandTotal` | element | big total figure |
@@ -303,3 +304,23 @@ merges the saved values over `DEFAULTS` on load.
   in `renderResults()` in `js/app.js`.
 * **Add an orientation**: add an `<option>` in `index.html`, handle it in `landingWidth`
   and the flight count in `calc.js`, and add a layout branch in `plan.js`.
+
+
+## Drawing scale (screen and print)
+
+Both drawings are in inches, so the same scale means the same CSS px per viewBox unit.
+After each redraw `app.js` reads each svg's `viewBox` and sets custom properties on
+`.sheet-frame`: `--vb-w-main`, `--vb-h-main`, `--vb-w-upper`, `--vb-h-upper`,
+`--vb-maxw` (largest width), `--vb-maxh` (largest height) and `--vb-sumw` (sum of widths;
+just the main width when the upper view is hidden). The CSS turns those into sizes:
+
+* **Screen:** the views are **stacked**: main plan on top, upper landing below, with a 1px rule
+  between. Each svg's width is proportional to its viewBox width and it keeps
+  `aspect-ratio: w / h`, capped so the tallest stays within the old max-height.
+* **Print:** the views sit **side by side** in a flex row. Each child's flex-grow is its
+  viewBox width, and the row's width is `min(100%, --print-plan-h × sumw / maxh)`, so both
+  share one scale and fit the plan height. This is pure CSS; no `beforeprint` script.
+
+Print must not depend on the screen width (iPhone Safari): `@media print` undoes every
+phone-width screen rule, uses inch sizes, and keeps the printed content within an
+**8.6in** height budget (Safari adds its own margins, header and footer).

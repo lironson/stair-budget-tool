@@ -354,6 +354,26 @@ test('landingCount 2 doubles both beam counts and weights', () => {
   assert.equal(two.beamsY.eachLengthIn, one.beamsY.eachLengthIn);
 });
 
+test('landingCount is clamped to 1 or 2 (straight: always 1)', () => {
+  const est = (st) => computeEstimate({ ...DEFAULTS, beamXCount: 2, beamYCount: 3, ...st });
+  // Through computeEstimate: beams = landings x beams per landing.
+  assert.equal(est({ landingCount: 0 }).beamsX.count, 2);             // 0 -> 1
+  assert.equal(est({ landingCount: 5 }).beamsX.count, 4);             // 5 -> 2
+  assert.equal(est({ landingCount: 5 }).beamsY.count, 6);
+  assert.equal(est({ landingCount: 'abc' }).beamsX.count, 2);         // 'abc' -> 1
+  assert.equal(est({ orientation: 'straight', landingCount: 2 }).beamsX.count, 2); // straight -> 1
+  assert.equal(est({ orientation: 'L', landingCount: 2 }).beamsX.count, 4);        // L keeps 2
+  assert.equal(est({ landingCount: '2' }).beamsY.count, 6);           // form text '2' -> 2
+
+  // Through standardLabourHours: 1.5 h per landing beam (2 X + 3 Y per landing).
+  const hours = (st) => standardLabourHours({ ...DEFAULTS, beamXCount: 2, beamYCount: 3, ...st });
+  assert.equal(hours({ landingCount: 0 }), hours({ landingCount: 1 }));
+  assert.equal(hours({ landingCount: 5 }), hours({ landingCount: 2 }));
+  assert.equal(hours({ landingCount: 'abc' }), hours({ landingCount: 1 }));
+  assert.equal(hours({ orientation: 'straight', landingCount: 2 }), hours({ orientation: 'straight', landingCount: 1 }));
+  assert.equal(hours({ orientation: 'L', landingCount: 2 }) - hours({ orientation: 'L', landingCount: 1 }), 5 * 1.5);
+});
+
 test('landingBeamLength: x and y, auto and override', () => {
   const st = { ...DEFAULTS, orientation: 'U', stairWidth: 44, wellGap: 4, landingDepth: 48 };
   assert.equal(landingBeamLength(st, 'x'), 92);                // auto X = landingWidth
@@ -503,7 +523,8 @@ test('landing deck: $/sq.ft over every landing, taxed with materials', () => {
   near(L.deck.sqFt, (44 * 48) / 144, 1e-9);
   const two = computeEstimate({ ...DEFAULTS, landingCount: 2 });
   near(two.deck.sqFt, 2 * zero.deck.sqFt, 1e-9);
-  assert.equal(computeEstimate({ ...DEFAULTS, landingCount: 0, deckRatePerSqFt: 12 }).costs.deck, 0);
+  // landingCount 0 is clamped up to 1, so it prices the 1-landing deck (368), not 0.
+  near(computeEstimate({ ...DEFAULTS, landingCount: 0, deckRatePerSqFt: 12 }).costs.deck, 368, 0.006);
   assert.equal(computeEstimate({ ...DEFAULTS, deckRatePerSqFt: 'x' }).costs.deck, 0);
 });
 

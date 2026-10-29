@@ -17,7 +17,8 @@
  *      hides the optional fields, runs computeEstimate(state), fills the estimate
  *      table, redraws the plan with renderPlan(svg, state) and, with 2+ landings,
  *      the upper-landing view with renderUpperLanding(svg, state) (#planUpperWrap
- *      is hidden otherwise), refreshes the title strip and the one-line summaries
+ *      is hidden otherwise), publishes the drawings' viewBox sizes as --vb-*
+ *      custom properties so both share one scale, refreshes the title strip and the one-line summaries
  *      of the collapsible input sections and saves the state.
  *   4. Remembers which input sections (<details class="section">) each viewer has
  *      open or closed (localStorage key 'stairBudgetTool.sections'), and runs the
@@ -61,6 +62,12 @@
  *     <span class="section-sum" id="sum-NAME"> in index.html (copy one), then add
  *     NAME: function (state) { return '…'; } to SECTION_SUMMARIES below. That text
  *     shows in the heading while the section is collapsed. Keep it short, values only.
+ *   - Landings: #landingCount is a <select> with options 1 and 2; clampLandings()
+ *     snaps saved or typed values into 1-2 and forces 1 for a straight run
+ *     (updateVisibility() disables option 2 then).
+ *   - Drawing scale: updateScaleVars() copies each svg's viewBox size to CSS custom
+ *     properties on .sheet-frame; the CSS (screen and print) sizes both drawings
+ *     from them so they share one scale. Don't size the svgs from JS.
  *   - Section open/closed state: initSections() restores it from SECTIONS_KEY and
  *     saves it on every `toggle` event, as { 'sec-NAME': true|false }. New sections
  *     need no extra code; with nothing saved every section starts open. The
@@ -251,7 +258,8 @@
   /**
    * Read every input whose id is a DEFAULTS key into a state object, with types:
    * checkboxes -> boolean, numbers -> parseFloat (fallback to DEFAULTS, never
-   * negative; INT_KEYS rounded), selects/text -> string (stringersPerFlight -> int).
+   * negative; INT_KEYS rounded), selects/text -> string (stringersPerFlight and
+   * landingCount -> int; landingCount clamped to 1-2, straight -> 1).
    * `orientation` is always normalised ('straight' | 'inline' | 'L' | 'U').
    * @returns {object} state (lengths in inches; see docs/ARCHITECTURE.md §1)
    */
@@ -275,7 +283,22 @@
       }
     });
     state.orientation = normOrientation(state.orientation);
+    state.landingCount = clampLandings(state.landingCount, state.orientation);
     return state;
+  }
+
+  /**
+   * Landings are 1 or 2 only (the #landingCount <select>); a straight run always
+   * has 1. Any other number snaps into range (same rule as calc.js).
+   * @param {*} n  raw value
+   * @param {string} orientation  normalised orientation
+   * @returns {1|2}
+   */
+  function clampLandings(n, orientation) {
+    n = Math.round(Number(n));
+    if (!Number.isFinite(n) || n < 1) n = 1;
+    if (n > 2 || orientation === 'straight') n = orientation === 'straight' ? 1 : 2;
+    return n;
   }
 
   /**
@@ -290,6 +313,7 @@
       if (!el) return;
       let value = key in state ? state[key] : DEFAULTS[key];
       if (key === 'orientation') value = normOrientation(value);
+      if (key === 'landingCount') value = clampLandings(value, normOrientation(state.orientation));
       if (el.type === 'checkbox') {
         el.checked = !!value;
       } else {
@@ -411,6 +435,14 @@
       'field-wellGap': orientation === 'U',
       'field-stringerCustomLbFt': state.stringerSection === CUSTOM,
     };
+    // Straight runs have one landing: disable option 2 and force the value to 1.
+    const lc = $('landingCount');
+    if (lc) {
+      Array.prototype.forEach.call(lc.options, function (o) {
+        if (o.value === '2') o.disabled = orientation === 'straight';
+      });
+      if (orientation === 'straight' && lc.value !== '1') lc.value = '1';
+    }
     BEAM_AXES.forEach(function (b) {
       toggles['field-' + b.key + 'CustomLbFt'] = state[b.key + 'Section'] === CUSTOM;
       toggles['field-' + b.key + 'LengthOverride'] = !state[b.key + 'LengthAuto'];
@@ -767,13 +799,44 @@
   }
 
   /**
+   * Same drawing scale on screen and in print: publish each svg's viewBox size as
+   * custom properties on .sheet-frame (--vb-w-main, --vb-h-main, --vb-w-upper,
+   * --vb-h-upper, --vb-maxw, --vb-maxh, --vb-sumw). styles.css turns them into
+   * widths and aspect ratios (docs/ARCHITECTURE.md, "Drawing scale"). With the
+   * upper view hidden, the upper values are 0 / 1 and sumw is the main width.
+   * @param {object} state  current state
+   */
+  function updateScaleVars(state) {
+    const frame = document.querySelector('.sheet-frame');
+    const main = $('plan');
+    const upper = $('planUpper');
+    if (!frame || !main) return;
+    function size(svg) {
+      const vb = svg && svg.viewBox && svg.viewBox.baseVal;
+      return vb && vb.width > 0 && vb.height > 0 ? { w: vb.width, h: vb.height } : { w: 4, h: 3 };
+    }
+    const m = size(main);
+    const showUpper = state.landingCount >= 2 && !!upper;
+    const u = showUpper ? size(upper) : { w: 0, h: 0 };
+    const set = function (k, v) { frame.style.setProperty(k, String(Math.round(v * 1000) / 1000)); };
+    set('--vb-w-main', m.w);
+    set('--vb-h-main', m.h);
+    set('--vb-w-upper', showUpper ? u.w : m.w);
+    set('--vb-h-upper', showUpper ? u.h : m.h);
+    set('--vb-maxw', Math.max(m.w, u.w));
+    set('--vb-maxh', Math.max(m.h, u.h));
+    set('--vb-sumw', m.w + u.w);
+  }
+
+  /**
    * The main loop: form -> state -> visibility -> estimate -> table -> plan ->
    * upper-landing view (2+ landings) -> title strip -> section summaries -> save.
    * Runs on every input/change event.
    */
   function update() {
+    // Sync the landings select first (straight -> 1), then read the form.
+    updateVisibility(readState());
     const state = readState();
-    updateVisibility(state);
 
     const result = computeEstimate(state);
     renderResults(result, state);
@@ -795,6 +858,7 @@
       console.error('renderUpperLanding failed:', e);
     }
 
+    updateScaleVars(state);
     updateTitleBlock(state);
     updateSectionSummaries(state);
     saveState(state);
@@ -848,6 +912,8 @@
   /**
    * When the page is opened straight from disk (file://), browsers block the logo
    * PNG as a CSS mask. Swap in a plain <img> instead (styled by .logo--file).
+   * (Print uses the separate .logo-print <img>; .logo is hidden there, so this
+   * fallback never shows twice on paper.)
    */
   function logoFallback() {
     const logo = document.querySelector('.logo');

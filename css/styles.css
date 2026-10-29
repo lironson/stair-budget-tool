@@ -4,8 +4,8 @@
  *
  * LAYOUT CONCEPT
  *   A working tool laid out like a shop drawing: inputs on the left, the live
- *   "drawing sheet" (plan view, plus the upper-landing view beside it when there
- *   are 2+ landings, and a title strip) on the right with the estimate under
+ *   "drawing sheet" (plan view, plus the upper-landing view stacked under it when
+ *   there are 2+ landings, and a title strip) on the right with the estimate under
  *   it. Sections are separated by thin rules, not cards. Below 900px everything
  *   stacks in one column in this order: PLAN first (compact), then INPUTS, then the
  *   ESTIMATE, because the plan is the main feature.
@@ -28,8 +28,10 @@
  *   - Collapsible input sections (<details class="section">, summary heading,
  *     .section-sum text shown only when collapsed, .chevron): section 5. The
  *     "Collapse all / Expand all" text button (.btn-text): section 7.
- *   - Plan sheet (#plan and the upper-landing view #planUpperWrap side by side,
- *     about 62 / 38, stacked under 600px): section 8. Print sizes: section 12.
+ *   - Plan sheet (#plan with the upper-landing view #planUpperWrap stacked under
+ *     it, both at ONE scale from the --vb-* custom properties app.js sets on
+ *     .sheet-frame): section 8. In print they sit side by side at one scale:
+ *     section 12. Both are pure CSS; see docs/ARCHITECTURE.md, "Drawing scale".
  *   - Theme: data-theme="light" | "dark" on <html>, set by the inline script in
  *     index.html and the "Dark mode" switch (localStorage key 'theme').
  */
@@ -155,6 +157,9 @@ th {
 .logo--file img { display: block; width: 100%; height: 100%; object-fit: contain; filter: invert(1); }
 :root[data-theme="dark"] .logo--file img { filter: none; }
 
+/* Print-only logo (black <img>; Safari doesn't print CSS masks). Shown in @media print. */
+.logo-print { display: none; }
+
 .brand-rule { width: 1px; align-self: stretch; background: var(--faint); }
 
 .brand-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -214,8 +219,7 @@ h1 i { font-style: normal; color: var(--accent); }
    tall enough for the whole column to fit; otherwise it would hide the table. */
 @media (min-width: 900px) and (min-height: 980px) {
   .output { position: sticky; top: 16px; }
-  #plan,
-  #planUpper { max-height: 48vh; }
+  .sheet-frame { --plan-max-h: 48vh; }
 }
 
 /* =========================================================================
@@ -497,54 +501,51 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   background: var(--plan-paper);
 }
 
-/* With the upper-landing view showing (2+ landings): main plan | upper landing,
-   about 62 / 38, split by a 1px --faint rule. The row height comes from #plan
-   alone; the upper svg fills that height (absolutely positioned), so neither
-   view can grow the sheet. Without :has() support it simply stacks. */
-.sheet-frame:has(> #planUpperWrap:not([hidden])) {
-  grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
-}
-/* Split on screen: #plan is 62% wide but keeps the whole frame's 4:3 height
-   (0.75 x the full width), so the main drawing doesn't shrink; same max-heights
-   as below. (Print sets a fixed height instead; phones stack at 4:3.) */
-@media screen and (min-width: 600px) {
-  .sheet-frame:has(> #planUpperWrap:not([hidden])) > #plan { aspect-ratio: 62 / 75; }
-}
-
-#plan {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 4 / 3;
-  max-height: 70vh;
+/* --- Same scale for both drawings ---
+   app.js sets --vb-w-main/--vb-h-main/--vb-w-upper/--vb-h-upper (each svg's
+   viewBox size in inches), --vb-maxw/--vb-maxh (the largest of each) and
+   --vb-sumw on .sheet-frame after every redraw. A drawing's width is its share of
+   the widest one, so both show the same px per inch; the second term caps the
+   scale so the tallest drawing never exceeds --plan-max-h (the same cap for both,
+   so the scales stay equal). The views are stacked and centred; no horizontal
+   scroll at any width because every width is <= 100%. */
+.sheet-frame {
+  --plan-max-h: 70vh;      /* tallest a drawing may be (smaller on narrow / short screens) */
+  --vb-w-main: 4; --vb-h-main: 3; --vb-w-upper: 4; --vb-h-upper: 3;
+  --vb-maxw: 4; --vb-maxh: 3; --vb-sumw: 4;   /* fallbacks until app.js runs */
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--faint);
   background: var(--plan-paper);
-}
-
-#planUpperWrap {
-  position: relative;
   min-width: 0;
-  border-left: 1px solid var(--faint);
+}
+@media (max-width: 899px) {
+  .sheet-frame { --plan-max-h: 50vh; }
+}
+
+#plan,
+#planUpper {
+  display: block;
+  height: auto;
+  max-width: 100%;
+  margin-inline: auto;
   background: var(--plan-paper);
+}
+#plan {
+  width: min(calc(100% * var(--vb-w-main) / var(--vb-maxw)),
+             calc(var(--plan-max-h) * var(--vb-w-main) / var(--vb-maxh)));
+  aspect-ratio: var(--vb-w-main) / var(--vb-h-main);
 }
 #planUpper {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: var(--plan-paper);
+  width: min(calc(100% * var(--vb-w-upper) / var(--vb-maxw)),
+             calc(var(--plan-max-h) * var(--vb-w-upper) / var(--vb-maxh)));
+  aspect-ratio: var(--vb-w-upper) / var(--vb-h-upper);
 }
-
-/* Phones: stack the upper-landing view under the main plan, sized like #plan. */
-@media (max-width: 599px) {
-  .sheet-frame:has(> #planUpperWrap:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
-  #planUpperWrap { border-left: 0; border-top: 1px solid var(--faint); }
-  #planUpper {
-    position: static;
-    height: auto;
-    aspect-ratio: 4 / 3;
-    max-height: 50vh;
-  }
+/* The wrapper is full width so its 1px rule spans the sheet; the svg centres in it. */
+#planUpperWrap {
+  min-width: 0;
+  border-top: 1px solid var(--faint);
+  background: var(--plan-paper);
 }
 
 /* Title strip: like the title block on a drawing. Cells are separated by 1px
@@ -567,17 +568,6 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   color: var(--muted);
 }
 .tb-cell--main { flex-grow: 4; color: var(--ink); }
-
-/* Compact plan on narrow screens so the inputs are close by. */
-@media (max-width: 899px) {
-  #plan { max-height: 50vh; }
-}
-/* Below 600px the views stack, each up to 50vh. Fallback when :has() isn't
-   supported: the upper view sits under the plan at any width. */
-@supports not selector(:has(*)) {
-  #planUpperWrap { border-left: 0; border-top: 1px solid var(--faint); }
-  #planUpper { position: static; height: auto; aspect-ratio: 4 / 3; max-height: 50vh; }
-}
 
 /* =========================================================================
    9. ESTIMATE  (big mono total, summary, warnings, breakdown table)
@@ -707,17 +697,28 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
    12. PRINT  — exactly ONE Letter page (docs/ARCHITECTURE.md §5 "Print")
    Order on paper: compact header · plan sheet · estimate (total + summary,
    warnings, table) · disclaimer and example-values note in small print.
-   Height budget (10in of printable height): header ~0.5in, plan 3.4in + title
-   strip (with 2+ landings the upper-landing view sits beside the plan, about
-   62 / 38, inside the same 3.4in-high box, so the height doesn't change), estimate ~4.3in (16 table rows, incl. Deck, Finish, Freight, PST), small print
-   ~0.3in. The spare height is what the warnings list uses when it shows up.
+
+   Height budget: 8.6in of content, NOT the 10in the 0.5in margins leave. iPhone
+   Safari adds its own margins, header and footer and scales to fit, so staying
+   within 8.6in keeps it on one page there (tested: scrollHeight <= 8.6in at a
+   720px-wide viewport). Roughly: header 0.45in, plan --print-plan-h + title
+   strip, estimate (16 table rows incl. Deck, Finish, Freight, PST) and ~0.3in of
+   small print; warnings use whatever is left.
+
+   PRINT DOES NOT DEPEND ON THE SCREEN WIDTH. Everything in the screen CSS that
+   reacts to a phone-sized viewport (display: contents on .output, the order
+   rules, vh max-heights, sticky, aspect ratios, hidden table column, mask logo)
+   is explicitly undone below, and sizes are in in / pt.
+
+   SAME SCALE: the plan and (with 2+ landings) the upper-landing view sit side by
+   side in a flex row. Each gets flex-grow = its viewBox width, so both share one
+   px-per-inch scale, and the row is min(100%, --print-plan-h x sumw / maxh) wide,
+   so the taller drawing is at most --print-plan-h high. Pure CSS; no beforeprint
+   script. With 1 landing it is just the plan.
 
    TO GIVE THE PLAN MORE OR LESS ROOM: change --print-plan-h below. Lower it
-   freely. 3.4in leaves room for every warning to show; with no warnings up to
-   ~5in fits. The svg uses preserveAspectRatio
-   "meet", so any drawing (25-tread L, 30-tread straight run…) scales down to fit
-   that box instead of overflowing. If you add table rows, warnings or make the
-   plan taller, re-check that print preview still shows one page.
+   freely. If you add table rows, warnings or make the plan taller, re-check that
+   print preview still shows one page and the 8.6in budget still holds.
    ========================================================================= */
 
 /* Letter, 0.5in margins all round: 7.5in × 10in of printable area. */
@@ -734,7 +735,7 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
      lines and figures keep the orange (--plan-dim), where it reads well. */
   :root,
   :root[data-theme] {
-    --print-plan-h: 3.4in;  /* plan drawing height: the main knob, see above */
+    --print-plan-h: 3.2in;  /* tallest drawing on paper: the main knob, see above */
 
     --bg: #ffffff;
     --ink: #000000;
@@ -766,8 +767,8 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   select { display: none !important; }
 
   /* One plain column; undo the screen grid, the sticky output column, the
-     narrow-screen reordering (display: contents) and every vh-based height,
-     so nothing can push content onto a second page. */
+     narrow-screen reordering (display: contents, order) and every vh-based
+     height, so nothing can push content onto a second page. */
   .page {
     max-width: none;
     min-height: 0;
@@ -781,56 +782,64 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
     flex-direction: column;
     gap: 10px;
     position: static;
+    top: auto;
     min-height: 0;
   }
+  .sheet, .inputs, .estimate { order: 0; }
 
-  /* --- Compact header: small logo + title, subtitle in small print --- */
+  /* --- Compact header: small logo + title, subtitle in small print ---
+     Safari doesn't print CSS masks (the .logo box comes out solid black), so
+     paper uses the <img class="logo-print"> (black on transparent) instead. */
   .site-header { gap: 12px; }
-  .logo {
+  .logo { display: none !important; }
+  .logo-print {
+    display: block;
+    flex: none;
     width: 0.9in;
     height: 0.45in;
-    /* The logo is an ink-filled box seen through a PNG mask. Browsers drop
-       background colours when printing unless told to keep them. */
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    object-fit: contain;
   }
-  /* file:// fallback <img>: always inverted to black on paper, even in dark mode. */
-  .logo--file img,
-  :root[data-theme="dark"] .logo--file img { filter: invert(1); }
   .brand-text { gap: 2px; }
   h1 { font-size: 16pt; }
   .subtitle { font-size: 7.5pt; }
 
-  /* --- Plan sheet: full content width, fixed-height box (see top). ---
-     A flex row here (not the screen grid, so it needs no :has()):
-     1 landing: #planUpperWrap is hidden and #plan grows to the full width, as
-     before. 2+ landings: #plan | upper landing, 62 / 38, a 1px rule between.
-     The row is --print-plan-h high (from #plan); #planUpper fills that height,
-     so the sheet is the same height either way and still fits the one page. */
+  /* --- Plan sheet: same scale, side by side (see top) ---
+     The frame is a centred flex row; each drawing's flex-grow is its viewBox
+     width (--vb-w-*) and it keeps its aspect ratio, so both have one scale. */
   .sheet { break-inside: avoid; page-break-inside: avoid; }
-  .sheet-frame { display: flex; border-color: var(--faint); }
-  #plan {
-    flex: 62 1 0;
+  .sheet-frame {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    width: min(100%, calc(var(--print-plan-h) * var(--vb-sumw) / var(--vb-maxh)));
+    margin-inline: auto;
+    border: 0;
+  }
+  #plan,
+  #planUpperWrap {
+    flex: var(--vb-w-main) 1 0;
     min-width: 0;
     width: auto;
-    height: var(--print-plan-h);
+    max-width: none;
     max-height: none;
-    aspect-ratio: auto;
+    margin: 0;
+    border: 0;
+    aspect-ratio: var(--vb-w-main) / var(--vb-h-main);
   }
   #planUpperWrap {
-    flex: 38 1 0;
-    position: relative;
-    border-top: 0;
-    border-left: 1px solid var(--faint);
+    flex: var(--vb-w-upper) 1 0;
+    aspect-ratio: var(--vb-w-upper) / var(--vb-h-upper);
+    box-shadow: -1px 0 0 var(--faint);   /* the divider, outside the box so the ratio stays exact */
   }
   #planUpper {
-    position: absolute;
-    inset: 0;
     width: 100%;
     height: 100%;
+    max-width: none;
     max-height: none;
+    margin: 0;
     aspect-ratio: auto;
   }
+  .title-block { border-top: 1px solid var(--faint); }
   .tb-cell { padding: 2px 8px; font-size: 7.5pt; }
 
   /* --- Estimate --- */
@@ -860,8 +869,16 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  .breakdown th,
-  .breakdown td { padding: 1.5px 8px; line-height: 1.25; }
+  /* Undo the phone rules: show the Length column and use the normal padding
+     (tr > raises specificity above the max-width: 600px rule). */
+  .breakdown th:nth-child(3),
+  .breakdown td:nth-child(3) { display: table-cell; }
+  .breakdown tr > th,
+  .breakdown tr > td { padding: 1px 8px; line-height: 1.25; }
+  .breakdown tr > th:first-child,
+  .breakdown tr > td:first-child { padding-left: 0; }
+  .breakdown tr > th:last-child,
+  .breakdown tr > td:last-child { padding-right: 0; }
   .breakdown thead th { padding-bottom: 2px; font-size: 7.5pt; }
   .breakdown .num { font-size: 8.5pt; }
   .breakdown thead .num { font-size: 7.5pt; }

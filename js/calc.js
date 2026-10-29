@@ -125,7 +125,7 @@ const DEFAULTS = {
   crankAllowance: 12,          // in, extra length added to EACH stringer for cranks / bearing
 
   // Landings
-  landingCount: 1,             // number of landings to price (all the same size)
+  landingCount: 1,             // number of landings to price: 1 or 2 (straight: 1), all the same size
   deckRatePerSqFt: 0,          // $ per sq.ft of landing deck (landing width x depth, every landing)
 
   // X landing beams — run ACROSS the stair (across flight 1's direction of travel)
@@ -189,6 +189,25 @@ function calcNum(value) {
  */
 function calcInt(value) {
   return Math.round(calcNum(value));
+}
+
+/**
+ * The number of landings to price, clamped to the rule in docs/ARCHITECTURE.md (section 1):
+ * 1 or 2 only. Use this everywhere landingCount is read, never state.landingCount itself.
+ *   - straight stair                         -> always 1
+ *   - anything < 1, NaN or text that is not a number -> 1
+ *   - anything > 2                           -> 2
+ * Numeric text ('2', from a form select) is read as its number. Fractions are rounded first.
+ *
+ * @param {object} state  the stair state (uses orientation and landingCount)
+ * @returns {number} 1 or 2
+ */
+function landingCountFor(state) {
+  const s = state || {};
+  if (normalizeOrientation(s.orientation) === 'straight') return 1;
+  const n = Math.round(typeof s.landingCount === 'number' ? s.landingCount : parseFloat(s.landingCount));
+  if (Number.isNaN(n) || n < 1) return 1;
+  return n > 2 ? 2 : n;
 }
 
 /**
@@ -271,7 +290,8 @@ function landingBeamLength(state, axis) {
  *
  * @param {object} state  the stair state
  * @returns {object} { flightCount, treadCounts[], stringersPerFlight, stringerCount,
- *                     landingCount, beamXCount, beamYCount }  (beam counts = all landings)
+ *                     landingCount (1 or 2, straight: 1), beamXCount, beamYCount }
+ *                     (beam counts = all landings)
  */
 function stairCounts(state) {
   const s = state || {};
@@ -279,7 +299,7 @@ function stairCounts(state) {
   const flightCount = normalizeOrientation(s.orientation) === 'straight' ? 1 : 2;
   const treadCounts = flightCount === 1 ? [calcInt(s.treads1)] : [calcInt(s.treads1), calcInt(s.treads2)];
   const stringersPerFlight = calcInt(s.stringersPerFlight);
-  const landingCount = calcInt(s.landingCount);
+  const landingCount = landingCountFor(s); // 1 or 2 (straight: 1), see landingCountFor()
   return {
     flightCount,
     treadCounts,
@@ -423,7 +443,7 @@ function computeEstimate(state) {
   const treadsCost = calcCents(totalTreads * calcNum(s.pricePerTread));   // material: treads bought by the piece
   // Landing deck: $/sq.ft x deck area. Each landing is landingWidth() (the full
   // width across both flights on a U-stair) x landingDepth; every landing the same.
-  const deckSqFt = (calcInt(s.landingCount) * landingWidth(s) * landingDepth) / 144; // sq.in -> sq.ft
+  const deckSqFt = (landingCountFor(s) * landingWidth(s) * landingDepth) / 144; // sq.in -> sq.ft
   const deckCost = calcCents(deckSqFt * calcNum(s.deckRatePerSqFt));
   // Finish (e.g. SP3 / standard primer): $/ft x finish footage = every stringer +
   // every landing beam. Treads are NOT included: the tread finish is part of the
