@@ -9,7 +9,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate,
+  SECTIONS, FINISHES, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate,
   fmtFtIn, fmtMoney, fmtNum,
 } = require('../js/calc.js');
 
@@ -420,4 +420,29 @@ test('PST: charged on materials only (steel + treads), after markup', () => {
   // 0% and garbage give no tax and no NaN.
   assert.equal(computeEstimate({ ...DEFAULTS, pstPct: 0 }).costs.pst, 0);
   assert.equal(computeEstimate({ ...DEFAULTS, pstPct: 'abc' }).costs.pst, 0);
+});
+
+test('finish: $/ft over stringers + landing beams + treads (tread = stair width)', () => {
+  assert.ok(FINISHES.some((f) => f.name === 'SP3/Standard Primer'));
+  assert.equal(DEFAULTS.finishType, 'SP3/Standard Primer');
+  assert.equal(DEFAULTS.finishRatePerFt, 0);
+
+  const zero = computeEstimate(DEFAULTS);
+  assert.equal(zero.costs.finish, 0);                 // default rate 0 -> no cost
+
+  const r = computeEstimate({ ...DEFAULTS, finishRatePerFt: 2.5 });
+  const treadFt = (20 * 44) / 12;                     // 20 treads x 44" wide
+  const ft = r.stringers.lengthFt + r.beamsX.lengthFt + r.beamsY.lengthFt + treadFt;
+  near(r.finish.treadFt, treadFt, 1e-9);
+  near(r.finish.lengthFt, ft, 1e-9);
+  near(r.costs.finish, ft * 2.5, 0.006);
+  assert.equal(r.finish.type, 'SP3/Standard Primer');
+  // In the subtotal, not taxed (PST is materials only).
+  near(r.costs.subtotal - zero.costs.subtotal, r.costs.finish, 0.011);
+  assert.equal(r.costs.pst, zero.costs.pst);
+  // No beams and a straight stair: stringers + treads only.
+  const s = computeEstimate({ ...DEFAULTS, orientation: 'straight', treads1: 12, beamXCount: 0, beamYCount: 0, finishRatePerFt: 1 });
+  near(s.finish.lengthFt, s.stringers.lengthFt + (12 * 44) / 12, 1e-9);
+  // Garbage rate -> 0, no NaN.
+  assert.equal(computeEstimate({ ...DEFAULTS, finishRatePerFt: 'x' }).costs.finish, 0);
 });

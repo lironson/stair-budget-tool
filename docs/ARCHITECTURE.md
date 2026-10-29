@@ -63,6 +63,8 @@ All lengths inside `state` and inside the calculations are **inches**. Weights a
 | `pricePerTread` | number $ | `85` | supply cost per tread (pan, grating, etc.) |
 | `pricePerLb` | number $ | `1.6` | channel steel cost per lb |
 | `connectionAllowancePct` | number % | `15` | extra steel weight for clips, plates, angles, bolts, welds |
+| `finishType` | string | `'SP3/Standard Primer'` | a `FINISHES` name (finish dropdown) |
+| `finishRatePerFt` | number $/ft | `0` | finish price per ft of stringers + landing beams + treads (each tread = one stair width) |
 | `labourHours` | number | `standardLabourHours(DEFAULTS)` (52 for the default stair) | total shop hours. The default is worked out **once** from the default stair by `standardLabourHours()` in `calc.js`; after that it is a plain number the user edits. It does not follow later changes to the stair |
 | `shopRate` | number $/hr | `100` | labour rate |
 | `detailingCost` | number $ | `0` | detailing (shop drawings), one lump sum |
@@ -121,7 +123,7 @@ dropdown option.
   baseSteelLb,                     // stringers.weightLb + beamsX.weightLb + beamsY.weightLb
   allowanceLb,                     // baseSteelLb x connectionAllowancePct / 100
   totalSteelLb,                    // baseSteelLb + allowanceLb
-  costs: { steel, treads, labour, detailing, installation, subtotal, markup, pst, total },
+  costs: { steel, treads, labour, detailing, installation, subtotal, markup, pst, total },   // + costs.finish
   warnings: [ 'string', ... ]      // gentle checks, e.g. riser > 7 7/8", tread < 10", treads < 1
 }
 ```
@@ -133,7 +135,8 @@ Formulas:
 * `costs.steel = totalSteelLb × pricePerLb`, `costs.treads = totalTreads × pricePerTread`,
   `costs.labour = labourHours × shopRate`, `costs.detailing = detailingCost`,
   `costs.installation = installationCost`,
-  `subtotal = steel + treads + labour + detailing + installation`,
+  `costs.finish = finishRatePerFt × finish.lengthFt` where `finish.lengthFt` = all stringers + all landing beams + treads × stairWidth,
+  `subtotal = steel + treads + finish + labour + detailing + installation`,
   `markup = subtotal × markupPct / 100`, `pst = (steel + treads) × pstPct / 100`,
   `total = subtotal + markup + pst` (GST excluded)
 
@@ -218,6 +221,7 @@ heading. Order and ids:
 | `sec-stringers` | Stringers | e.g. `C12x20.7 × 2 / flight` |
 | `sec-landings` | Landings | e.g. `1 landing · X 2 × C8x11.2 · Y 2 × C8x11.2` |
 | `sec-material` | Material pricing | e.g. `$85.00 / tread · $1.60 / lb` |
+| `sec-finish` | Finishes | e.g. `SP3/Standard Primer · $2.50 / ft` |
 | `sec-labour` | Labour | e.g. `52 hrs @ $100.00 / hr` |
 | `sec-detailing` | Detailing | e.g. `$1,200.00` |
 | `sec-installation` | Installation | e.g. `$3,500.00` |

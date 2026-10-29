@@ -377,6 +377,35 @@
           </fieldset>
         </details>
 
+        <!-- --- Finishes: one finish type, priced $/ft over stringers + landing beams + treads.
+             The options come from FINISHES in js/calc.js (filled by app.js). --- -->
+        <details class="section" id="sec-finish" open>
+          <summary>
+            <span class="section-title">Finishes</span>
+            <span class="section-sum" id="sum-finish"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Finishes</legend>
+            <div class="fields">
+              <div class="field field--full">
+                <label for="finishType">Finish</label>
+                <div class="select-wrap">
+                  <select id="finishType"></select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="finishRatePerFt">Finish rate</label>
+                <div class="input-unit">
+                  <input id="finishRatePerFt" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-finishRatePerFt">
+                  <span class="unit">$/ft</span>
+                </div>
+                <p class="hint" id="hint-finishRatePerFt">Per ft of stringers, landing beams and treads</p>
+              </div>
+            </div>
+          </fieldset>
+        </details>
+
         <!-- --- Labour: total shop hours x shop rate --- -->
         <details class="section" id="sec-labour" open>
           <summary>

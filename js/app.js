@@ -183,6 +183,17 @@
    * (calc.js), each followed by a final "Custom…" option.
    */
   function fillSectionSelects() {
+    // Finishes: plain names from FINISHES (calc.js); no "Custom…" option.
+    const finish = $('finishType');
+    if (finish && typeof FINISHES !== 'undefined') {
+      finish.textContent = '';
+      FINISHES.forEach(function (f) {
+        const opt = document.createElement('option');
+        opt.value = f.name;
+        opt.textContent = f.name;
+        finish.appendChild(opt);
+      });
+    }
     ['stringerSection', 'beamXSection', 'beamYSection'].forEach(function (id) {
       const select = $(id);
       if (!select) return;
@@ -510,6 +521,14 @@
         cost: fmtMoney(c.treads),
       },
       {
+        // Finish: $/ft over stringers + landing beams + treads (finish.lengthFt).
+        name: 'Finish',
+        detail: (result.finish ? result.finish.type : state.finishType) + ' · ' +
+          fmtMoney(state.finishRatePerFt) + ' / ft',
+        length: result.finish ? fmtNum(result.finish.lengthFt, 1) + ' ft' : '',
+        cost: fmtMoney(c.finish || 0),
+      },
+      {
         name: 'Labour',
         detail: fmtQty(state.labourHours) + ' hrs @ ' + fmtMoney(state.shopRate) + '/hr',
         qty: fmtQty(state.labourHours) + ' hrs',
@@ -593,6 +612,10 @@
     // "$85.00 / tread · $1.60 / lb"
     material: function (s) {
       return fmtMoney(s.pricePerTread) + ' / tread · ' + fmtMoney(s.pricePerLb) + ' / lb';
+    },
+    // "SP3/Standard Primer · $0.00 / ft"
+    finish: function (s) {
+      return s.finishType + ' · ' + fmtMoney(s.finishRatePerFt) + ' / ft';
     },
     // "52 hrs @ $100.00 / hr"
     labour: function (s) {

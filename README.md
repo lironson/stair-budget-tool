@@ -19,6 +19,8 @@ and works out material and labour cost as you type.
   has its own section, beams per landing and length. The length matches the landing width
   (X) or depth (Y) automatically, or you can set it yourself.
 - **Material**: $/tread, $/lb of channel, and a % allowance for connections and misc steel.
+- **Finishes**: pick a finish (SP3/Standard Primer to start; more can be added in
+  `js/calc.js`) and a $/ft rate, priced over the stringers, landing beams and treads.
 - **Labour**: total shop hours × shop rate. The starting hours are a standard figure for
   the default stair; type over them with your own.
 - **Detailing** and **Installation**: one lump-sum line each (shop drawings; erection crew,

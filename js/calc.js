@@ -85,6 +85,16 @@ const SECTIONS = [
 ];
 
 /*
+ * FINISHES — the choices in the Finishes dropdown. To add one, add a row
+ * { name: '…' }; the dropdown picks it up automatically. Every finish is priced
+ * with the same $/ft rate input (finishRatePerFt) against the finish footage
+ * (see computeEstimate: stringers + landing beams + treads).
+ */
+const FINISHES = [
+  { name: 'SP3/Standard Primer' },
+];
+
+/*
  * DEFAULTS — the starting value of every form field (same keys as the `state` object).
  * Lengths are inches. The prices are EXAMPLE RATES, not real quotes.
  */
@@ -126,6 +136,8 @@ const DEFAULTS = {
   pricePerTread: 85,           // $ per tread (pan, grating, etc.)
   pricePerLb: 1.6,             // $ per lb of channel steel
   connectionAllowancePct: 15,  // % extra steel weight for clips, plates, angles, bolts, welds
+  finishType: 'SP3/Standard Primer', // a FINISHES name
+  finishRatePerFt: 0,          // $ per ft of finished member (stringers + landing beams + treads)
   labourHours: 0,              // total shop hours; set below from standardLabourHours(DEFAULTS)
   shopRate: 100,               // $ per hour
   detailingCost: 0,            // $ lump sum — detailing / shop drawings
@@ -283,8 +295,10 @@ DEFAULTS.labourHours = standardLabourHours(DEFAULTS);
  *   stringers      { section, lbft, count, lengthFt, weightLb }        (lengthFt = all stringers)
  *   beamsX         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (X landing beams)
  *   beamsY         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (Y landing beams)
+ *   finish         { type, lengthFt, treadFt }  ft of stringers + beams + treads (tread = stair width)
  *   baseSteelLb, allowanceLb, totalSteelLb  (lb)
  *   costs          { steel, treads, labour, detailing, installation, subtotal, markup, pst, total }  ($)
+ *                  finish = finishRatePerFt x finish.lengthFt (not taxed)
  *                  detailing / installation are the detailingCost / installationCost lump sums;
  *                  pst = pstPct x (steel + treads), materials only; GST is not included
  *   warnings[]     short plain-English strings
@@ -375,16 +389,22 @@ function computeEstimate(state) {
   // lines always sum exactly to the printed subtotal and total.
   const steel = calcCents(totalSteelLb * calcNum(s.pricePerLb));          // material: steel bought by the lb
   const treadsCost = calcCents(totalTreads * calcNum(s.pricePerTread));   // material: treads bought by the piece
+  // Finish (e.g. SP3 / standard primer): $/ft x finish footage. The footage is
+  // every stringer + every landing beam + every tread, each tread counted as one
+  // stair width long (the tread spans the stair from stringer to stringer).
+  const treadFt = (totalTreads * stairWidth) / 12;
+  const finishFt = stringers.lengthFt + beamsX.lengthFt + beamsY.lengthFt + treadFt;
+  const finishCost = calcCents(finishFt * calcNum(s.finishRatePerFt));
   const labour = calcCents(calcNum(s.labourHours) * calcNum(s.shopRate)); // shop hours x hourly rate
   const detailing = calcCents(calcNum(s.detailingCost));                  // lump sum: shop drawings
   const installation = calcCents(calcNum(s.installationCost));            // lump sum: erection
-  const subtotal = calcCents(steel + treadsCost + labour + detailing + installation);
+  const subtotal = calcCents(steel + treadsCost + finishCost + labour + detailing + installation);
   const markup = calcCents((subtotal * calcNum(s.markupPct)) / 100);      // overhead / profit on top of cost
   // PST (provincial sales tax) on materials only: the steel and the treads. Labour,
   // detailing, installation and markup are not taxed. GST is left out of the estimate.
   const pst = calcCents(((steel + treadsCost) * calcNum(s.pstPct)) / 100);
   const total = calcCents(subtotal + markup + pst);
-  const costs = { steel, treads: treadsCost, labour, detailing, installation, subtotal, markup, pst, total };
+  const costs = { steel, treads: treadsCost, finish: finishCost, labour, detailing, installation, subtotal, markup, pst, total };
 
   // ---- Warnings (gentle checks, not a code review) ----
   // 7 3/4" is a common residential maximum and 7" a common commercial one; 7 7/8" is
@@ -423,6 +443,7 @@ function computeEstimate(state) {
     totalRise,
     stringers,
     beamsX,
+    finish: { type: String(s.finishType || ''), lengthFt: finishFt, treadFt: treadFt },
     beamsY,
     baseSteelLb,
     allowanceLb,
@@ -489,4 +510,4 @@ function fmtNum(n, decimals = 0) {
   return text.replace(/^-(?=0(\.0+)?$)/, ''); // never show "-0"
 }
 
-if (typeof module !== 'undefined') module.exports = { SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };
+if (typeof module !== 'undefined') module.exports = { SECTIONS, FINISHES, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };
