@@ -1,0 +1,13 @@
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Node (only used for running the tests; no packages are required)
+node_modules/
+
+# Scratch / local test output
+*.log
+tmp/

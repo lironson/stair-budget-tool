@@ -1,0 +1,9 @@
+{
+  "name": "steel-stair-estimator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Budget cost estimator for steel channel stairs with a live framing plan view.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

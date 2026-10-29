@@ -1,0 +1,580 @@
+/*
+ * styles.css — Steel Stair Estimator
+ * ==================================
+ *
+ * LAYOUT CONCEPT
+ *   A working tool laid out like a shop drawing: inputs on the left, the live
+ *   "drawing sheet" (plan view + title strip) on the right with the estimate under
+ *   it. Sections are separated by thin rules, not cards. Below 900px everything
+ *   stacks in one column in this order: PLAN first (compact), then INPUTS, then the
+ *   ESTIMATE, because the plan is the main feature.
+ *
+ *   SHARED LOOK WITH STEEL SIZE ROLODEX — KEEP IN SYNC.
+ *   The tokens (colours, fonts), header, inputs, buttons and switch mirror the
+ *   Rolodex app so the two tools feel like one product. If you change one of those
+ *   in either app, change it in the other too.
+ *
+ * HOW IT CONNECTS
+ *   index.html uses these classes; js/app.js only toggles the `hidden` attribute and
+ *   writes text. js/plan.js reads the --plan-* tokens below inside the SVG.
+ *
+ * HOW TO EDIT
+ *   - Colours: change the tokens in section 1 only. Component rules never use
+ *     literal colours, so light, dark and print all follow.
+ *   - Plan colours: the --plan-* tokens (light and dark blocks).
+ *   - Column widths / breakpoint: section 4 (900px breakpoint).
+ *   - Theme: data-theme="light" | "dark" on <html>, set by the inline script in
+ *     index.html and the "Dark mode" switch (localStorage key 'theme').
+ */
+
+/* =========================================================================
+   1. TOKENS  (shared look with Steel Size Rolodex: keep in sync)
+   ========================================================================= */
+
+/* --- Light theme (default) --- */
+:root {
+  /* Type */
+  --f-display: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  --f-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* Core colours */
+  --bg: #ffffff;        /* page */
+  --ink: #0b0b0b;       /* text, rules that matter, input underlines */
+  --muted: #767676;     /* labels, secondary text */
+  --faint: #e6e6e6;     /* hairline section rules */
+  --accent: #ff4f00;    /* orange: focus, h1 period, switch on, dimensions, hover */
+  --on-accent: #ffffff; /* text on an orange fill */
+
+  /* Plan view (read by js/plan.js inside the <svg>) */
+  --plan-paper: var(--bg);     /* sheet background: no coloured paper */
+  --plan-ink: var(--ink);      /* treads, outlines, text */
+  --plan-steel: var(--ink);    /* stringers & channels: bold ink, like the Rolodex drawing */
+  --plan-muted: var(--muted);  /* hatch, secondary lines */
+  --plan-dim: var(--accent);   /* dimension lines and ticks */
+  --plan-landing: #f4f4f4;     /* very light landing tint */
+
+  color-scheme: light;
+}
+
+/* --- Dark theme (switch in the footer sets data-theme="dark") --- */
+:root[data-theme="dark"] {
+  --bg: #000000;
+  --ink: #f2f2f2;
+  --muted: #8a8a8a;
+  --faint: #262626;
+
+  --plan-paper: var(--bg);
+  --plan-ink: var(--ink);
+  --plan-steel: var(--ink);
+  --plan-muted: var(--muted);
+  --plan-dim: var(--accent);
+  --plan-landing: #111111;
+
+  color-scheme: dark;
+}
+
+/* =========================================================================
+   2. BASE
+   ========================================================================= */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+/* The hidden attribute must always win (app.js hides fields with el.hidden). */
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.4 var(--f-body);
+}
+
+h1, h2, p { margin: 0; }
+
+/* Shared "label" voice: labels, legends, column headers, title strip. */
+.label,
+label,
+legend,
+th {
+  font: 600 12px var(--f-display);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Generic visible focus for anything that does not define its own. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* =========================================================================
+   3. PAGE WRAPPER + HEADER  (Rolodex header: logo | rule | h1)
+   ========================================================================= */
+
+.page {
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* Logo PNG is white-on-transparent and used as a mask, so it takes the ink colour. */
+.logo {
+  flex: none;
+  width: 143px;
+  height: 72px;
+  background: var(--ink);
+  -webkit-mask: url("../assets/grizzly-logo.png") center/contain no-repeat;
+  mask: url("../assets/grizzly-logo.png") center/contain no-repeat;
+}
+
+/* Opened from disk (file://) the browser refuses to use the PNG as a mask, so
+   app.js swaps in an <img>: inverted to black in light mode, as-is in dark. */
+.logo.logo--file { background: none; -webkit-mask: none; mask: none; }
+.logo--file img { display: block; width: 100%; height: 100%; object-fit: contain; filter: invert(1); }
+:root[data-theme="dark"] .logo--file img { filter: none; }
+
+.brand-rule { width: 1px; align-self: stretch; background: var(--faint); }
+
+.brand-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+h1 {
+  font: 700 24px/1 var(--f-display);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin: 0;
+}
+h1 i { font-style: normal; color: var(--accent); }
+
+.subtitle { color: var(--muted); font-size: 13px; }
+
+@media (max-width: 480px) {
+  .site-header { gap: 14px; }
+  .logo { width: 95px; height: 48px; }
+  h1 { font-size: 20px; }
+  .subtitle { font-size: 12px; }
+}
+
+/* =========================================================================
+   4. MAIN LAYOUT
+   Desktop: two columns (inputs | output). Narrow: one column, plan first.
+   ========================================================================= */
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+
+/* Narrow screens: dissolve .output so plan, inputs and estimate can be reordered. */
+.output { display: contents; }
+.sheet { order: 1; }
+.inputs { order: 2; }
+.estimate { order: 3; }
+
+@media (min-width: 900px) {
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+    column-gap: 40px;
+    align-items: start;
+  }
+  .output {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    min-width: 0;
+  }
+  .sheet, .inputs, .estimate { order: 0; }
+}
+
+/* Keep the drawing + estimate in view while editing inputs, but only on screens
+   tall enough for the whole column to fit; otherwise it would hide the table. */
+@media (min-width: 900px) and (min-height: 980px) {
+  .output { position: sticky; top: 16px; }
+  #plan { max-height: 48vh; }
+}
+
+/* =========================================================================
+   5. INPUT PANEL  (Rolodex controls: underlined mono inputs, square corners)
+   ========================================================================= */
+
+.inputs {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  padding-block: 14px 18px;
+  border: 0;
+  border-top: 1px solid var(--faint);
+  min-width: 0;
+}
+fieldset:first-child { border-top: 0; padding-top: 0; }
+
+/* Legend floats awkwardly by default; make it a block heading. */
+legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 12px;
+  color: var(--ink);
+  font-size: 14px;
+}
+legend + * { clear: left; }
+
+.fields {
+  clear: left;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field--full { grid-column: 1 / -1; }
+
+.hint { font-size: 12px; color: var(--muted); }
+
+.note { font-size: 13px; color: var(--muted); }
+fieldset > .note { clear: left; margin-bottom: 12px; }
+
+/* --- Text / number inputs and selects: underline only --- */
+input[type="number"],
+input[type="text"],
+select {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 2px;
+  border: 0;
+  border-bottom: 2px solid var(--ink);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 500 15px var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+input:focus,
+select:focus { outline: none; border-bottom-color: var(--accent); }
+
+/* Hide number spinners; arrow keys still step the value. */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Input with a unit suffix: the underline moves to the wrapper. */
+.input-unit {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  border-bottom: 2px solid var(--ink);
+}
+.input-unit input { border-bottom: 0; }
+.input-unit:focus-within { border-bottom-color: var(--accent); }
+.unit {
+  flex: none;
+  padding-right: 2px;
+  font: 500 12px var(--f-mono);
+  color: var(--muted);
+}
+
+/* Select with a drawn chevron (square, no images). */
+.select-wrap { position: relative; }
+.select-wrap select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 24px;
+  cursor: pointer;
+}
+.select-wrap select option { background: var(--bg); color: var(--ink); }
+.select-wrap::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+/* Switch row: "Match landing width" + the auto length, e.g. (7'-8") */
+.field--switch {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.auto-value {
+  font: 500 14px var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/* =========================================================================
+   6. SWITCH  (Rolodex markup; one of only two rounded things on the page)
+   ========================================================================= */
+
+.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; color: var(--ink); }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.track { position: relative; width: 38px; height: 22px; flex: none; border: 1.5px solid var(--ink); border-radius: 11px; transition: background .15s, border-color .15s; }
+.knob { position: absolute; top: 3px; left: 3px; width: 13px; height: 13px; border-radius: 50%; background: var(--ink); transition: transform .15s, background .15s; }
+.switch input:checked + .track { background: var(--accent); border-color: var(--accent); }
+.switch input:checked + .track .knob { transform: translateX(16px); background: var(--on-accent); }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch-label { font: 600 13px var(--f-display); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); }
+
+/* =========================================================================
+   7. BUTTONS  (Rolodex: ink block, orange on hover)
+   ========================================================================= */
+
+.btn {
+  font: 700 15px var(--f-display);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border: 0;
+  border-radius: 0;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.btn:hover { background: var(--accent); color: var(--on-accent); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Secondary button: outlined in ink, fills orange on hover like the primary. */
+.btn--ghost {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+.btn--ghost:hover { box-shadow: none; }
+
+/* =========================================================================
+   8. PLAN SHEET  (thin frame, no coloured paper, title strip under it)
+   ========================================================================= */
+
+.sheet { display: flex; flex-direction: column; min-width: 0; }
+
+.sheet-frame {
+  border: 1px solid var(--faint);
+  background: var(--plan-paper);
+}
+
+#plan {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  max-height: 70vh;
+  background: var(--plan-paper);
+}
+
+/* Title strip: like the title block on a drawing. Cells are separated by 1px
+   gaps showing the --faint background, so wrapped rows still read as a grid. */
+.title-block {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  background: var(--faint);
+  border: 1px solid var(--faint);
+  border-top: 0;
+}
+.tb-cell {
+  flex: 1 1 auto;
+  padding: 6px 10px;
+  background: var(--bg);
+  font: 600 12px var(--f-display);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tb-cell--main { flex-grow: 4; color: var(--ink); }
+
+/* Compact plan on narrow screens so the inputs are close by. */
+@media (max-width: 899px) {
+  #plan { max-height: 50vh; }
+}
+
+/* =========================================================================
+   9. ESTIMATE  (big mono total, summary, warnings, breakdown table)
+   ========================================================================= */
+
+.estimate { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.estimate-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--faint);
+}
+
+.grand-total {
+  font: 600 44px/1.05 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+/* The "$" is the one orange detail in the total (app.js wraps it in .cur). */
+.grand-total .cur { color: var(--accent); margin-right: 2px; }
+
+.summary { color: var(--muted); font-size: 14px; }
+
+/* Warnings: a ruled list with an orange marker bar. */
+.warnings {
+  margin: 0;
+  padding: 0;
+  padding-left: 12px;
+  list-style: none;
+  border-left: 3px solid var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
+/* Table wrapper scrolls sideways on its own so the page never does. */
+.table-wrap { overflow-x: auto; min-width: 0; -webkit-overflow-scrolling: touch; }
+
+.breakdown {
+  width: 100%;
+  min-width: 540px;
+  border-collapse: collapse;
+}
+/* Phones: drop the Length column (each row's detail line already shows the cut
+   lengths) so Item / Qty / Weight / Cost fit without sideways scrolling. */
+@media (max-width: 600px) {
+  .breakdown { min-width: 0; }
+  .breakdown th:nth-child(3),
+  .breakdown td:nth-child(3) { display: none; }
+  .breakdown tr > th,
+  .breakdown tr > td { padding-inline: 6px; }  /* tr > raises specificity over the base rule below */
+}
+.breakdown th,
+.breakdown td {
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--faint);
+}
+.breakdown th:first-child,
+.breakdown td:first-child { padding-left: 0; }
+.breakdown th:last-child,
+.breakdown td:last-child { padding-right: 0; }
+.breakdown thead th { border-bottom: 2px solid var(--ink); padding-bottom: 6px; }
+
+/* Number columns: right-aligned mono, tabular figures. */
+.breakdown .num {
+  text-align: right;
+  white-space: nowrap;
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+.breakdown thead .num { font: 600 12px var(--f-display); }
+
+/* Item cell: name + small detail line. */
+.item-name { font-weight: 600; }
+.item-detail { display: block; font-size: 13px; color: var(--muted); }
+
+/* Subtotal-type rows: a heavier ink rule above. */
+.breakdown tr.row-sub td { border-top: 1px solid var(--ink); }
+.breakdown tr.row-sub .item-name,
+.breakdown tr.row-total .item-name {
+  font: 600 13px var(--f-display);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.breakdown tr.row-total td {
+  border-top: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  font-weight: 600;
+}
+.breakdown tr.row-total .num { font-size: 16px; }
+
+/* =========================================================================
+   10. FOOTER  (theme switch, disclaimer, actions)
+   ========================================================================= */
+
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  border-top: 1px solid var(--faint);
+  padding-top: 12px;
+}
+.disclaimer { flex: 1 1 260px; font-size: 13px; color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* =========================================================================
+   11. REDUCED MOTION
+   ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after { transition: none !important; animation: none !important; }
+}
+
+/* =========================================================================
+   12. PRINT  (plan + estimate in black on white; no inputs, no buttons)
+   ========================================================================= */
+
+@media print {
+  /* Force black-on-white whatever theme is active on screen. */
+  :root,
+  :root[data-theme] {
+    --bg: #ffffff;
+    --ink: #000000;
+    --muted: #444444;
+    --faint: #999999;
+    --accent: #000000;
+    --on-accent: #ffffff;
+    --plan-paper: #ffffff;
+    --plan-ink: #000000;
+    --plan-steel: #000000;
+    --plan-muted: #555555;
+    --plan-dim: #000000;
+    --plan-landing: #ffffff;
+    color-scheme: light;
+  }
+
+  .inputs,
+  .actions,
+  .site-footer .switch,
+  .estimate > .note { display: none !important; }
+
+  .page { max-width: none; padding-block: 0; gap: 12px; }
+  .layout { display: block; }
+  .output { display: block; position: static; }
+  .sheet { break-inside: avoid; margin-bottom: 16px; }
+  #plan { max-height: 13cm; }
+  .table-wrap { overflow: visible; }
+  .breakdown { min-width: 0; }
+  .breakdown tr { break-inside: avoid; }
+  .grand-total { font-size: 28px; }
+}
