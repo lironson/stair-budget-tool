@@ -7,7 +7,8 @@
     The page markup: the header, the input form (left column, in collapsible
     sections, with a "Collapse all / Expand all" button above them), the plan
     sheet (the live plan view <svg id="plan"> and, with 2+ landings, the
-    upper-landing view <svg id="planUpper"> below it, same scale) and the estimate (right
+    upper-landing view <svg id="planUpper">, chosen with the view tabs above the
+    sheet) and the estimate (right
     column), and the footer.
     It holds no logic and no prices; everything is filled in by the scripts.
 
@@ -49,10 +50,12 @@
       before the first <details class="section">.
     - Plan sheet: .sheet-frame holds <svg id="plan"> and <div id="planUpperWrap">
       (the upper-landing view, hidden by app.js when there are fewer than 2
-      landings). CSS stacks them on screen and puts them side by side in
-      print; both share one scale via the --vb-* custom properties that app.js sets
-      on .sheet-frame (see docs/ARCHITECTURE.md, "Drawing scale"). Keep both inside
-      .sheet-frame.
+      landings). Above the frame, #viewTabs (buttons #tabMain / #tabUpper, shown by
+      app.js only with 2+ landings) picks which one is visible ON SCREEN
+      (app.js sets .show-main / .show-upper on .sheet-frame). In print the tabs
+      are hidden and both views sit side by side at one scale via the --vb-*
+      custom properties that app.js sets on .sheet-frame (see
+      docs/ARCHITECTURE.md, "Drawing scale"). Keep both inside .sheet-frame.
     - Landings: #landingCount is a <select> with options 1 and 2 only (app.js
       disables 2 for a straight run).
     - Logo: .logo (CSS mask, screen) and .logo-print (<img>, print only); keep both.
@@ -82,7 +85,7 @@
        GitHub Pages lets browsers cache styles.css and the scripts, and iPhone Safari kept an
        old styles.css next to a new index.html, which broke the printout. Changing ?v= makes
        every browser fetch fresh copies. -->
-  <link rel="stylesheet" href="css/styles.css?v=20261029-2">
+  <link rel="stylesheet" href="css/styles.css?v=20261029-3">
   <!-- Logo rules kept in the page itself, so they apply even if a stale stylesheet is
        cached: screen shows the .logo mask, print shows the black .logo-print image. -->
   <style>
@@ -101,7 +104,7 @@
       <div class="logo" role="img" aria-label="Grizzly Metal Fabrication"></div>
       <!-- Print-only logo: black on transparent. Safari doesn't print CSS masks, so
            paper uses this <img>; on screen it is hidden. -->
-      <img class="logo-print" src="assets/grizzly-logo-print.png?v=20261029-2" width="86" height="43" alt="Grizzly Metal Fabrication">
+      <img class="logo-print" src="assets/grizzly-logo-print.png?v=20261029-3" width="86" height="43" alt="Grizzly Metal Fabrication">
       <div class="brand-rule" aria-hidden="true"></div>
       <div class="brand-text">
         <h1>Stair Budget Tool<i>.</i></h1>
@@ -600,10 +603,14 @@
       <div class="output">
 
         <!-- --- Plan sheet: live drawing(s) + title strip ---
-             The frame holds the main plan and, with 2+ landings, the upper-landing
-             view below it on screen (beside it in print), both at the same scale. -->
+             The tabs (2+ landings only) switch the screen between the main plan and
+             the upper-landing view; print shows both side by side at the same scale. -->
         <section class="sheet" aria-labelledby="sheetTitle">
-          <div class="sheet-frame">
+          <div class="view-tabs" id="viewTabs" role="tablist" aria-label="Plan views" hidden>
+            <button type="button" role="tab" id="tabMain" aria-controls="plan" aria-selected="true" tabindex="0">1 · Stair framing plan</button>
+            <button type="button" role="tab" id="tabUpper" aria-controls="planUpperWrap" aria-selected="false" tabindex="-1">2 · Upper landing framing plan</button>
+          </div>
+          <div class="sheet-frame show-main">
             <!-- renderPlan() in js/plan.js draws into this svg -->
             <svg id="plan" role="img" aria-label="Stair framing plan" xmlns="http://www.w3.org/2000/svg"></svg>
             <!-- renderUpperLanding() in js/plan.js draws into this svg;
@@ -611,7 +618,10 @@
             <div id="planUpperWrap" hidden><svg id="planUpper" role="img" aria-label="Upper landing framing plan" xmlns="http://www.w3.org/2000/svg"></svg></div>
           </div>
           <div class="title-block">
+            <!-- #sheetTitle names the view shown on screen; in print both drawings show, so
+                 .tb-print-title (filled by app.js) replaces it there. -->
             <span class="tb-cell tb-cell--main" id="sheetTitle">Stair framing plan</span>
+            <span class="tb-cell tb-cell--main tb-print-title" id="sheetTitlePrint">Stair framing plan</span>
             <span class="tb-cell" id="tbOrientation">—</span>
             <span class="tb-cell">Scale: NTS</span>
           </div>
@@ -666,8 +676,8 @@
   </div>
 
   <!-- ===== SCRIPTS: classic scripts, this order (calc → plan → app) ===== -->
-  <script src="js/calc.js?v=20261029-2"></script>
-  <script src="js/plan.js?v=20261029-2"></script>
-  <script src="js/app.js?v=20261029-2"></script>
+  <script src="js/calc.js?v=20261029-3"></script>
+  <script src="js/plan.js?v=20261029-3"></script>
+  <script src="js/app.js?v=20261029-3"></script>
 </body>
 </html>

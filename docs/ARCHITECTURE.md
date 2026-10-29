@@ -230,7 +230,10 @@ Other ids:
 | id | element | used for |
 |---|---|---|
 | `plan` | `<svg>` | `renderPlan` target |
-| `planUpperWrap` | element | holds the upper-landing view; `hidden` when `landingCount < 2`. On screen it sits **below** `#plan` at the same scale; in print the two sit side by side at the same scale (see "Drawing scale") |
+| `viewTabs` | element | `role="tablist"` above the plan sheet; `hidden` when `landingCount < 2`. Print-hidden |
+| `tabMain` | `<button role="tab">` | "1 · Stair framing plan"; `aria-controls="plan"` |
+| `tabUpper` | `<button role="tab">` | "2 · Upper landing framing plan"; `aria-controls="planUpperWrap"` |
+| `planUpperWrap` | element | holds the upper-landing view; `hidden` when `landingCount < 2`. On screen only the tab-selected view shows (`.show-main` / `.show-upper` on `.sheet-frame`); in print both sit side by side at the same scale (see "Drawing scale") |
 | `planUpper` | `<svg>` | `renderUpperLanding` target |
 | `.logo-print` | `<img>` | print-only logo, `assets/grizzly-logo-print.png` (black on transparent). Shown in print instead of the CSS-mask `.logo`, which iPhone Safari prints as a black block |
 | `toggleAllBtn` | `<button>` | above the first input section: "Collapse all" while any section is open, otherwise "Expand all"; sets every `details.section` `open` (their `toggle` handlers save the state) |
@@ -314,9 +317,12 @@ After each redraw `app.js` reads each svg's `viewBox` and sets custom properties
 `--vb-maxw` (largest width), `--vb-maxh` (largest height) and `--vb-sumw` (sum of widths;
 just the main width when the upper view is hidden). The CSS turns those into sizes:
 
-* **Screen:** the views are **stacked**: main plan on top, upper landing below, with a 1px rule
-  between. Each svg's width is proportional to its viewBox width and it keeps
-  `aspect-ratio: w / h`, capped so the tallest stays within the old max-height.
+* **Screen:** one view at a time. With 2+ landings the tabs (`#tabMain`, `#tabUpper`) pick the
+  view (`planView`, saved in localStorage `stairBudgetTool.planView`); `app.js` sets
+  `.show-main` / `.show-upper` on `.sheet-frame` and the other view is `display: none` on
+  screen only. The shown view fills the sheet like the plan did with 1 landing (full width,
+  capped at `--plan-max-h`, `aspect-ratio: w / h`). Both drawings are still redrawn on every
+  update.
 * **Print:** the views sit **side by side** in a flex row. Each child's flex-grow is its
   viewBox width, and the row's width is `min(100%, --print-plan-h × sumw / maxh)`, so both
   share one scale and fit the plan height. This is pure CSS; no `beforeprint` script.

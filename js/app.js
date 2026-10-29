@@ -17,7 +17,9 @@
  *      hides the optional fields, runs computeEstimate(state), fills the estimate
  *      table, redraws the plan with renderPlan(svg, state) and, with 2+ landings,
  *      the upper-landing view with renderUpperLanding(svg, state) (#planUpperWrap
- *      is hidden otherwise), publishes the drawings' viewBox sizes as --vb-*
+ *      is hidden otherwise; both drawings are always redrawn because print shows
+ *      both), shows the view chosen with the tabs #tabMain / #tabUpper on screen
+ *      (planView 'main' | 'upper', remembered in 'stairBudgetTool.planView'), publishes the drawings' viewBox sizes as --vb-*
  *      custom properties so both share one scale, refreshes the title strip and the one-line summaries
  *      of the collapsible input sections and saves the state.
  *   4. Remembers which input sections (<details class="section">) each viewer has
@@ -65,9 +67,13 @@
  *   - Landings: #landingCount is a <select> with options 1 and 2; clampLandings()
  *     snaps saved or typed values into 1-2 and forces 1 for a straight run
  *     (updateVisibility() disables option 2 then).
+ *   - Plan view tabs: applyPlanView() sets aria-selected / tabindex on the tabs,
+ *     the .show-main / .show-upper class on .sheet-frame and the #sheetTitle text;
+ *     initViewTabs() wires clicks and Left/Right/Home/End keys. Tab labels live in
+ *     index.html, the view names in VIEW_NAMES below. Screen only: print shows both.
  *   - Drawing scale: updateScaleVars() copies each svg's viewBox size to CSS custom
- *     properties on .sheet-frame; the CSS (screen and print) sizes both drawings
- *     from them so they share one scale. Don't size the svgs from JS.
+ *     properties on .sheet-frame; the print CSS sizes both drawings from them so
+ *     they share one scale. Don't size the svgs from JS.
  *   - Section open/closed state: initSections() restores it from SECTIONS_KEY and
  *     saves it on every `toggle` event, as { 'sec-NAME': true|false }. New sections
  *     need no extra code; with nothing saved every section starts open. The
@@ -660,6 +666,89 @@
     return ORIENTATION_LABELS[normOrientation(state.orientation)] || '';
   }
 
+  /* ---------------------------------------------------------------------
+     Plan view tabs (screen): 1 · Stair framing plan / 2 · Upper landing framing plan
+     --------------------------------------------------------------------- */
+
+  const PLAN_VIEW_KEY = 'stairBudgetTool.planView';
+  const VIEW_NAMES = { main: 'Stair framing plan', upper: 'Upper landing framing plan' };
+  /** Current screen view: 'main' or 'upper'. Shown as 'main' with fewer than 2 landings. */
+  let planView = 'main';
+
+  /** @returns {string} the saved view ('main' or 'upper'); 'main' if unavailable. */
+  function loadPlanView() {
+    try {
+      return localStorage.getItem(PLAN_VIEW_KEY) === 'upper' ? 'upper' : 'main';
+    } catch (e) {
+      return 'main';
+    }
+  }
+
+  /**
+   * Show the chosen view on screen: tab state, .show-main / .show-upper on
+   * .sheet-frame and the title-strip name. With fewer than 2 landings the tabs are
+   * hidden and the view is forced to 'main'.
+   * @param {object} state  current state
+   */
+  function applyPlanView(state) {
+    const two = state.landingCount >= 2;
+    if (!two) planView = 'main';
+    const view = planView;
+    const tabs = $('viewTabs');
+    if (tabs) tabs.hidden = !two;
+    [['tabMain', 'main'], ['tabUpper', 'upper']].forEach(function (t) {
+      const b = $(t[0]);
+      if (!b) return;
+      b.setAttribute('aria-selected', view === t[1] ? 'true' : 'false');
+      b.tabIndex = view === t[1] ? 0 : -1;
+    });
+    const frame = document.querySelector('.sheet-frame');
+    if (frame) {
+      frame.classList.toggle('show-upper', view === 'upper');
+      frame.classList.toggle('show-main', view === 'main');
+    }
+    const title = $('sheetTitle');
+    if (title) title.textContent = VIEW_NAMES[view];
+    // Print shows both drawings side by side, so its title names both.
+    const printTitle = $('sheetTitlePrint');
+    if (printTitle) printTitle.textContent = two ? 'Stair + upper landing framing plans' : VIEW_NAMES.main;
+  }
+
+  /**
+   * Choose a view (from a click or arrow key): remember it and update the sheet.
+   * @param {string} view  'main' or 'upper'
+   * @param {boolean} focus  move keyboard focus to that tab
+   */
+  function setPlanView(view, focus) {
+    planView = view === 'upper' ? 'upper' : 'main';
+    try { localStorage.setItem(PLAN_VIEW_KEY, planView); } catch (e) { /* private mode */ }
+    applyPlanView(readState());
+    if (focus) {
+      const b = $(planView === 'upper' ? 'tabUpper' : 'tabMain');
+      if (b) b.focus();
+    }
+  }
+
+  /** Wire the tabs: click, and Left/Right (wrapping) / Home / End to move. */
+  function initViewTabs() {
+    planView = loadPlanView();
+    const tabs = $('viewTabs');
+    if (!tabs) return;
+    tabs.addEventListener('click', function (e) {
+      const b = e.target.closest && e.target.closest('[role="tab"]');
+      if (b) setPlanView(b.id === 'tabUpper' ? 'upper' : 'main', false);
+    });
+    tabs.addEventListener('keydown', function (e) {
+      let next = null;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') next = planView === 'upper' ? 'main' : 'upper';
+      else if (e.key === 'Home') next = 'main';
+      else if (e.key === 'End') next = 'upper';
+      if (!next) return;
+      e.preventDefault();
+      setPlanView(next, true);
+    });
+  }
+
   /**
    * Update the drawing's title strip with the orientation and, with 2+ landings,
    * the landing count, e.g. "U-STAIR" or "U-STAIR · 2 LANDINGS" (CSS uppercases).
@@ -801,8 +890,9 @@
   /**
    * Same drawing scale on screen and in print: publish each svg's viewBox size as
    * custom properties on .sheet-frame (--vb-w-main, --vb-h-main, --vb-w-upper,
-   * --vb-h-upper, --vb-maxw, --vb-maxh, --vb-sumw). styles.css turns them into
-   * widths and aspect ratios (docs/ARCHITECTURE.md, "Drawing scale"). With the
+   * --vb-h-upper, --vb-maxw, --vb-maxh, --vb-sumw). The print CSS turns them into
+   * widths and aspect ratios (docs/ARCHITECTURE.md, "Drawing scale"); on screen
+   * only the aspect ratios are used (one view at a time). With the
    * upper view hidden, the upper values are 0 / 1 and sumw is the main width.
    * @param {object} state  current state
    */
@@ -859,6 +949,7 @@
     }
 
     updateScaleVars(state);
+    applyPlanView(state);
     updateTitleBlock(state);
     updateSectionSummaries(state);
     saveState(state);
@@ -934,6 +1025,7 @@
     fillSectionSelects();
     writeState(loadState());
     initSections();
+    initViewTabs();
 
     const form = $('inputs');
     form.addEventListener('input', onFormEvent);
