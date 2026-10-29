@@ -256,6 +256,23 @@ legend + * { clear: left; }
 .note { font-size: 13px; color: var(--muted); }
 fieldset > .note { clear: left; margin-bottom: 12px; }
 
+/* Sub-group inside a fieldset (Landings: "X beams" / "Y beams"):
+   a hairline, a small uppercase heading in ink, a hint line, then its own grid. */
+.subgroup {
+  clear: left;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--faint);
+}
+.subgroup-title {
+  margin: 0;
+  font: 600 13px var(--f-display);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.subgroup-hint { margin: 2px 0 12px; }
+
 /* --- Text / number inputs and selects: underline only --- */
 input[type="number"],
 input[type="text"],

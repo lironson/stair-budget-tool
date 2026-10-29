@@ -12,9 +12,10 @@ and works out material and labour cost as you type.
   U-stair (180° return, left or right). These are modelled on typical stair framing plans.
 - **Stringers**: choose any C or MC channel (or enter a custom lb/ft), with 2 outer cranked
   stringers or 4 (2 cranked + 2 inner).
-- **Landings**: choose the channel section, the number of channels per landing and the
-  number of landings. The channel length matches the landing width automatically, or you
-  can set it yourself.
+- **Landings**: price landing beams in both directions. **X beams** run across the stair
+  and **Y beams** run along it (landing edges, and the well on a U-stair). Each direction
+  has its own section, beams per landing and length. The length matches the landing width
+  (X) or depth (Y) automatically, or you can set it yourself.
 - **Material**: $/tread, $/lb of channel, and a % allowance for connections and misc steel.
 - **Labour**: total shop hours × shop rate, plus an optional markup.
 - **Live plan view** in drawing style: stringers, landing channels, tread lines, UP arrows

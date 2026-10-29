@@ -24,6 +24,10 @@
     - Add an orientation: add an <option> to #orientation, then handle it in
       js/calc.js and js/plan.js (see docs/ARCHITECTURE.md, "How to…").
     - Wrapper ids starting with "field-" are shown/hidden by app.js; keep them.
+    - Landings have two beam groups (div.subgroup): X beams run ACROSS the stair
+      (ids beamX*, the old "landing channels") and Y beams run ALONG it, in flight
+      1's direction of travel (ids beamY*). Each has a section, custom lb/ft, count,
+      a "match" switch with an <output id="beam?LengthAutoValue"> and an override.
 -->
 <html lang="en">
 <head>
@@ -183,57 +187,116 @@
           </div>
         </fieldset>
 
-        <!-- --- Landings: channel section, counts, channel length --- -->
+        <!-- --- Landings: count, then X beams (across) and Y beams (along) ---
+             X = across flight 1's travel (the old "landing channels");
+             Y = along flight 1's travel (landing edges, the U-stair well). -->
         <fieldset>
           <legend>Landings</legend>
           <div class="fields">
-            <div class="field field--full">
-              <label for="landingSection">Landing channel section</label>
-              <div class="select-wrap">
-                <!-- Options are added by app.js from SECTIONS in js/calc.js -->
-                <select id="landingSection"></select>
-              </div>
-            </div>
-
-            <div class="field field--full" id="field-landingCustomLbFt">
-              <label for="landingCustomLbFt">Custom channel weight</label>
-              <div class="input-unit">
-                <input id="landingCustomLbFt" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">lb/ft</span>
-              </div>
-            </div>
-
             <div class="field">
               <label for="landingCount">Landings</label>
               <div class="input-unit">
-                <input id="landingCount" type="number" inputmode="numeric" min="0" step="1">
+                <input id="landingCount" type="number" inputmode="numeric" min="0" step="1" aria-describedby="hint-landingCount">
                 <span class="unit">ea</span>
               </div>
+              <p class="hint" id="hint-landingCount">All the same size</p>
             </div>
+          </div>
 
-            <div class="field">
-              <label for="channelsPerLanding">Channels / landing</label>
-              <div class="input-unit">
-                <input id="channelsPerLanding" type="number" inputmode="numeric" min="0" step="1">
-                <span class="unit">ea</span>
+          <!-- X beams: across the stair -->
+          <div class="subgroup" role="group" aria-labelledby="beamXTitle">
+            <h3 class="subgroup-title" id="beamXTitle">X beams — across the stair</h3>
+            <p class="hint subgroup-hint">Run across flight 1, spanning the landing width</p>
+            <div class="fields">
+              <div class="field field--full">
+                <label for="beamXSection">X beam section</label>
+                <div class="select-wrap">
+                  <!-- Options are added by app.js from SECTIONS in js/calc.js -->
+                  <select id="beamXSection"></select>
+                </div>
+              </div>
+
+              <div class="field field--full" id="field-beamXCustomLbFt">
+                <label for="beamXCustomLbFt">Custom X beam weight</label>
+                <div class="input-unit">
+                  <input id="beamXCustomLbFt" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">lb/ft</span>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="beamXCount">Beams / landing</label>
+                <div class="input-unit">
+                  <input id="beamXCount" type="number" inputmode="numeric" min="0" step="1">
+                  <span class="unit">ea</span>
+                </div>
+              </div>
+
+              <!-- X beam length: switch on = landing width (shown in #beamXLengthAutoValue) -->
+              <div class="field field--full field--switch">
+                <label class="switch" for="beamXLengthAuto">
+                  <input type="checkbox" id="beamXLengthAuto" role="switch">
+                  <span class="track" aria-hidden="true"><span class="knob"></span></span>
+                  <span class="switch-label">Match landing width</span>
+                </label>
+                <output class="auto-value" id="beamXLengthAutoValue" for="beamXLengthAuto"></output>
+              </div>
+
+              <div class="field field--full" id="field-beamXLengthOverride">
+                <label for="beamXLengthOverride">Beam length, each</label>
+                <div class="input-unit">
+                  <input id="beamXLengthOverride" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">in</span>
+                </div>
               </div>
             </div>
+          </div>
 
-            <!-- Channel length: switch on = landing width (shown in #channelLengthAutoValue) -->
-            <div class="field field--full field--switch">
-              <label class="switch" for="channelLengthAuto">
-                <input type="checkbox" id="channelLengthAuto" role="switch">
-                <span class="track" aria-hidden="true"><span class="knob"></span></span>
-                <span class="switch-label">Match landing width</span>
-              </label>
-              <output class="auto-value" id="channelLengthAutoValue" for="channelLengthAuto"></output>
-            </div>
+          <!-- Y beams: along the stair -->
+          <div class="subgroup" role="group" aria-labelledby="beamYTitle">
+            <h3 class="subgroup-title" id="beamYTitle">Y beams — along the stair</h3>
+            <p class="hint subgroup-hint">Run in flight 1's direction of travel — e.g. landing edges and the U-stair well</p>
+            <div class="fields">
+              <div class="field field--full">
+                <label for="beamYSection">Y beam section</label>
+                <div class="select-wrap">
+                  <!-- Options are added by app.js from SECTIONS in js/calc.js -->
+                  <select id="beamYSection"></select>
+                </div>
+              </div>
 
-            <div class="field field--full" id="field-channelLengthOverride">
-              <label for="channelLengthOverride">Channel length, each</label>
-              <div class="input-unit">
-                <input id="channelLengthOverride" type="number" inputmode="decimal" min="0" step="any">
-                <span class="unit">in</span>
+              <div class="field field--full" id="field-beamYCustomLbFt">
+                <label for="beamYCustomLbFt">Custom Y beam weight</label>
+                <div class="input-unit">
+                  <input id="beamYCustomLbFt" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">lb/ft</span>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="beamYCount">Beams / landing</label>
+                <div class="input-unit">
+                  <input id="beamYCount" type="number" inputmode="numeric" min="0" step="1">
+                  <span class="unit">ea</span>
+                </div>
+              </div>
+
+              <!-- Y beam length: switch on = landing depth (shown in #beamYLengthAutoValue) -->
+              <div class="field field--full field--switch">
+                <label class="switch" for="beamYLengthAuto">
+                  <input type="checkbox" id="beamYLengthAuto" role="switch">
+                  <span class="track" aria-hidden="true"><span class="knob"></span></span>
+                  <span class="switch-label">Match landing depth</span>
+                </label>
+                <output class="auto-value" id="beamYLengthAutoValue" for="beamYLengthAuto"></output>
+              </div>
+
+              <div class="field field--full" id="field-beamYLengthOverride">
+                <label for="beamYLengthOverride">Beam length, each</label>
+                <div class="input-unit">
+                  <input id="beamYLengthOverride" type="number" inputmode="decimal" min="0" step="any">
+                  <span class="unit">in</span>
+                </div>
               </div>
             </div>
           </div>

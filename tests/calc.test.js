@@ -9,7 +9,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  SECTIONS, DEFAULTS, sectionWeight, landingWidth, computeEstimate, fmtFtIn, fmtMoney, fmtNum,
+  SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, computeEstimate, fmtFtIn, fmtMoney, fmtNum,
 } = require('../js/calc.js');
 
 /** Assert that two numbers are within `tol` of each other. */
@@ -49,10 +49,13 @@ test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
   const strLen = Math.sqrt(run * run + rise * rise) + 12;
   const stringerFt = (strLen * 2 * 2) / 12;   // 2 flights x 2 stringers
   const stringerLb = stringerFt * 20.7;       // C12x20.7
-  const chanEach = 2 * 44 + 4;                // U-right landing width = 92"
-  const chanFt = (1 * 2 * chanEach) / 12;     // 1 landing x 2 channels
-  const chanLb = chanFt * 11.2;               // C8x11.2
-  const base = stringerLb + chanLb;
+  const xEach = 2 * 44 + 4;                   // X beams: U-right landing width = 92"
+  const xFt = (1 * 2 * xEach) / 12;           // 1 landing x 2 X beams
+  const xLb = xFt * 11.2;                     // C8x11.2
+  const yEach = 48;                           // Y beams: landing depth = 48"
+  const yFt = (1 * 2 * yEach) / 12;           // 1 landing x 2 Y beams
+  const yLb = yFt * 11.2;                     // C8x11.2
+  const base = stringerLb + xLb + yLb;
   const allowance = base * 0.15;
   const totalLb = base + allowance;
   const steel = totalLb * 1.6;
@@ -69,9 +72,12 @@ test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
   assert.equal(r.stringers.count, 4);
   near(r.stringers.lengthFt, stringerFt, 1e-9);
   near(r.stringers.weightLb, stringerLb, 1e-9);
-  assert.equal(r.channels.count, 2);
-  near(r.channels.eachLengthIn, 92, 1e-9);
-  near(r.channels.weightLb, chanLb, 1e-9);
+  assert.equal(r.beamsX.count, 2);
+  near(r.beamsX.eachLengthIn, 92, 1e-9);
+  near(r.beamsX.weightLb, xLb, 1e-9);
+  assert.equal(r.beamsY.count, 2);
+  near(r.beamsY.eachLengthIn, 48, 1e-9);
+  near(r.beamsY.weightLb, yLb, 1e-9);
   near(r.baseSteelLb, base, 1e-9);
   near(r.allowanceLb, allowance, 1e-9);
   near(r.totalSteelLb, totalLb, 1e-9);
@@ -126,11 +132,124 @@ test('SECTIONS rows are well formed', () => {
   }
 });
 
-test('channel length override is used when channelLengthAuto is false', () => {
-  const r = computeEstimate({ ...DEFAULTS, channelLengthAuto: false, channelLengthOverride: 60 });
-  assert.equal(r.channels.eachLengthIn, 60);
-  near(r.channels.lengthFt, (2 * 60) / 12, 1e-9);
-  near(r.channels.weightLb, 10 * 11.2, 1e-9);
+test('landing beam hand check: U-right 44" + 4" gap, 48" deep, 2 X + 2 Y C8x11.2', () => {
+  const r = computeEstimate({
+    ...DEFAULTS, orientation: 'U-right', stairWidth: 44, wellGap: 4, landingDepth: 48,
+    landingCount: 1, beamXCount: 2, beamYCount: 2, beamXSection: 'C8x11.2', beamYSection: 'C8x11.2',
+  });
+  // X: 2 x 92" = 184" = 15.333 ft x 11.2 = 171.73 lb
+  assert.equal(r.beamsX.section, 'C8x11.2');
+  assert.equal(r.beamsX.lbft, 11.2);
+  assert.equal(r.beamsX.count, 2);
+  near(r.beamsX.eachLengthIn, 92, 1e-9);
+  near(r.beamsX.lengthFt, 15.333, 0.001);
+  near(r.beamsX.weightLb, 171.73, 0.01);
+  // Y: 2 x 48" = 96" = 8 ft x 11.2 = 89.6 lb
+  assert.equal(r.beamsY.section, 'C8x11.2');
+  assert.equal(r.beamsY.lbft, 11.2);
+  assert.equal(r.beamsY.count, 2);
+  near(r.beamsY.eachLengthIn, 48, 1e-9);
+  near(r.beamsY.lengthFt, 8, 1e-9);
+  near(r.beamsY.weightLb, 89.6, 1e-9);
+  near(r.baseSteelLb, r.stringers.weightLb + r.beamsX.weightLb + r.beamsY.weightLb, 1e-9);
+});
+
+test('result has beamsX / beamsY and no old channels key', () => {
+  const r = computeEstimate(DEFAULTS);
+  assert.ok('beamsX' in r && 'beamsY' in r);
+  assert.ok(!('channels' in r));
+  for (const k of ['landingSection', 'landingCustomLbFt', 'channelsPerLanding', 'channelLengthAuto', 'channelLengthOverride']) {
+    assert.ok(!(k in DEFAULTS), k);
+  }
+});
+
+test('beamYCount 0 -> no Y steel and no Y warning, even with a 0 lb/ft Y section', () => {
+  const r = computeEstimate({ ...DEFAULTS, beamYCount: 0, beamYSection: 'Custom', beamYCustomLbFt: 0 });
+  assert.equal(r.beamsY.count, 0);
+  assert.equal(r.beamsY.lengthFt, 0);
+  assert.equal(r.beamsY.weightLb, 0);
+  assert.ok(!r.warnings.some((w) => w.includes('Y landing beam')));
+  near(r.baseSteelLb, r.stringers.weightLb + r.beamsX.weightLb, 1e-9);
+});
+
+test('zero lb/ft warning per axis, only when that axis has beams', () => {
+  const x0 = computeEstimate({ ...DEFAULTS, beamXSection: 'Custom', beamXCustomLbFt: 0 });
+  assert.ok(x0.warnings.some((w) => w.includes('X landing beam')));
+  assert.ok(!x0.warnings.some((w) => w.includes('Y landing beam')));
+  const y0 = computeEstimate({ ...DEFAULTS, beamYSection: 'Custom', beamYCustomLbFt: 0 });
+  assert.ok(y0.warnings.some((w) => w.includes('Y landing beam')));
+  assert.ok(!y0.warnings.some((w) => w.includes('X landing beam')));
+  const x0none = computeEstimate({ ...DEFAULTS, beamXCount: 0, beamXSection: 'nope' });
+  assert.ok(!x0none.warnings.some((w) => w.includes('X landing beam')));
+  const s0 = computeEstimate({ ...DEFAULTS, stringerSection: 'Custom', stringerCustomLbFt: 0 });
+  assert.ok(s0.warnings.some((w) => w.includes('stringer')));
+});
+
+test('length override on each axis is used when its auto switch is off', () => {
+  const rx = computeEstimate({ ...DEFAULTS, beamXLengthAuto: false, beamXLengthOverride: 60 });
+  assert.equal(rx.beamsX.eachLengthIn, 60);
+  near(rx.beamsX.lengthFt, (2 * 60) / 12, 1e-9);
+  near(rx.beamsX.weightLb, 10 * 11.2, 1e-9);
+  assert.equal(rx.beamsY.eachLengthIn, 48);          // Y still automatic
+
+  const ry = computeEstimate({ ...DEFAULTS, beamYLengthAuto: false, beamYLengthOverride: 30 });
+  assert.equal(ry.beamsY.eachLengthIn, 30);
+  near(ry.beamsY.lengthFt, (2 * 30) / 12, 1e-9);
+  near(ry.beamsY.weightLb, 5 * 11.2, 1e-9);
+  assert.equal(ry.beamsX.eachLengthIn, 92);          // X still automatic
+
+  // The text 'false' from a form counts as off too.
+  const rs = computeEstimate({ ...DEFAULTS, beamYLengthAuto: 'false', beamYLengthOverride: 30 });
+  assert.equal(rs.beamsY.eachLengthIn, 30);
+});
+
+test('Custom lb/ft on each axis', () => {
+  const r = computeEstimate({
+    ...DEFAULTS, beamXSection: 'Custom', beamXCustomLbFt: 15, beamYSection: 'Custom', beamYCustomLbFt: 9,
+  });
+  assert.equal(r.beamsX.section, 'Custom');
+  assert.equal(r.beamsX.lbft, 15);
+  near(r.beamsX.weightLb, ((2 * 92) / 12) * 15, 1e-9);
+  assert.equal(r.beamsY.section, 'Custom');
+  assert.equal(r.beamsY.lbft, 9);
+  near(r.beamsY.weightLb, ((2 * 48) / 12) * 9, 1e-9);
+  assert.deepEqual(r.warnings, []);
+  // A custom lb/ft is ignored while a table section is picked.
+  const t = computeEstimate({ ...DEFAULTS, beamXCustomLbFt: 99, beamYCustomLbFt: 99 });
+  assert.equal(t.beamsX.lbft, 11.2);
+  assert.equal(t.beamsY.lbft, 11.2);
+});
+
+test('landingCount 2 doubles both beam counts and weights', () => {
+  const one = computeEstimate({ ...DEFAULTS, landingCount: 1, beamXCount: 2, beamYCount: 3 });
+  const two = computeEstimate({ ...DEFAULTS, landingCount: 2, beamXCount: 2, beamYCount: 3 });
+  assert.equal(one.beamsX.count, 2);
+  assert.equal(one.beamsY.count, 3);
+  assert.equal(two.beamsX.count, 4);
+  assert.equal(two.beamsY.count, 6);
+  near(two.beamsX.weightLb, 2 * one.beamsX.weightLb, 1e-9);
+  near(two.beamsY.weightLb, 2 * one.beamsY.weightLb, 1e-9);
+  assert.equal(two.beamsX.eachLengthIn, one.beamsX.eachLengthIn);
+  assert.equal(two.beamsY.eachLengthIn, one.beamsY.eachLengthIn);
+});
+
+test('landingBeamLength: x and y, auto and override', () => {
+  const st = { ...DEFAULTS, orientation: 'U-right', stairWidth: 44, wellGap: 4, landingDepth: 48 };
+  assert.equal(landingBeamLength(st, 'x'), 92);                // auto X = landingWidth
+  assert.equal(landingBeamLength(st, 'y'), 48);                // auto Y = landingDepth
+  assert.equal(landingBeamLength({ ...st, orientation: 'L-left' }, 'x'), 44);
+  assert.equal(landingBeamLength({ ...st, beamXLengthAuto: false, beamXLengthOverride: 50 }, 'x'), 50);
+  assert.equal(landingBeamLength({ ...st, beamYLengthAuto: false, beamYLengthOverride: 40 }, 'y'), 40);
+  // One axis's override does not touch the other.
+  assert.equal(landingBeamLength({ ...st, beamXLengthAuto: false, beamXLengthOverride: 50 }, 'y'), 48);
+  // Anything but 'y' is treated as 'x'; 'Y' works too.
+  assert.equal(landingBeamLength(st, 'Y'), 48);
+  assert.equal(landingBeamLength(st, undefined), 92);
+  assert.equal(landingBeamLength(st, 'z'), 92);
+  // Garbage never gives NaN.
+  assert.equal(landingBeamLength(undefined, 'y'), 0);
+  assert.equal(landingBeamLength({ beamYLengthAuto: false, beamYLengthOverride: 'abc' }, 'y'), 0);
+  assert.equal(landingBeamLength({ beamXLengthAuto: false, beamXLengthOverride: -5 }, 'x'), 0);
 });
 
 test('warnings', () => {
@@ -156,6 +275,14 @@ test('garbage input never produces NaN', () => {
   assertAllFinite(computeEstimate({}));
   assertAllFinite(computeEstimate(undefined));
   assertAllFinite(computeEstimate({ ...DEFAULTS, treads1: 'abc', riserHeight: NaN, stairWidth: Infinity, markupPct: null }));
+  assertAllFinite(computeEstimate({
+    ...DEFAULTS, landingDepth: 'x', beamXCount: 'two', beamYCount: NaN, beamXCustomLbFt: null,
+    beamXSection: 'Custom', beamYSection: undefined, beamXLengthAuto: false, beamXLengthOverride: 'abc',
+    beamYLengthAuto: 'false', beamYLengthOverride: Infinity,
+  }));
+  // The garbage state above (every key '') has no landing steel at all.
+  assert.equal(r1.beamsX.weightLb, 0);
+  assert.equal(r1.beamsY.weightLb, 0);
 
   // Negatives clamp to 0, fractional tread counts round to whole treads.
   const r2 = computeEstimate({ ...DEFAULTS, orientation: 'straight', treads1: -5, labourHours: -10 });

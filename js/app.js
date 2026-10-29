@@ -3,9 +3,12 @@
  * ========================================================
  *
  * WHAT THIS FILE DOES
- *   1. Fills the two channel-section dropdowns from SECTIONS (+ "Custom…").
+ *   1. Fills the three channel-section dropdowns (stringers, X landing beams,
+ *      Y landing beams) from SECTIONS (+ "Custom…").
  *   2. Loads the last-used values from localStorage (key 'stairEstimator.v1'),
- *      merged over DEFAULTS, and writes them into the form.
+ *      merged over DEFAULTS, and writes them into the form. Saves made before the
+ *      landings had X and Y beams (keys landingSection, channelsPerLanding, …) are
+ *      migrated onto the X beam keys (see LEGACY_KEYS).
  *   3. On every keystroke / change: reads the form into a `state` object, shows or
  *      hides the optional fields, runs computeEstimate(state), fills the estimate
  *      table, redraws the plan with renderPlan(svg, state) and saves the state.
@@ -13,7 +16,8 @@
  *
  * HOW IT CONNECTS TO THE OTHER FILES
  *   index.html loads js/calc.js, then js/plan.js, then this file (classic scripts).
- *   From calc.js it uses: DEFAULTS, SECTIONS, computeEstimate, landingWidth,
+ *   From calc.js it uses: DEFAULTS, SECTIONS, computeEstimate, landingBeamLength
+ *                         (falls back to landingWidth / landingDepth if missing),
  *                         fmtFtIn, fmtMoney, fmtNum.
  *   From plan.js it uses: renderPlan.
  *   Everything in this file sits inside one wrapper function (an "IIFE") so its
@@ -30,6 +34,10 @@
  *     renderResults() below — copy the "Treads" row.
  *   - Show/hide a field depending on other inputs: give its wrapper an id and add
  *     a line in updateVisibility().
+ *   - Landing beams come in two directions, X (across the stair) and Y (along it).
+ *     Code that handles both loops over BEAM_AXES below; to add a per-axis input,
+ *     add beamX…/beamY… keys to DEFAULTS and matching ids in index.html.
+ *   - Rename a state key: add old -> new to LEGACY_KEYS so saved values carry over.
  *   - Change the saved-data key: STORAGE_KEY below (changing it forgets old saves).
  */
 
@@ -43,7 +51,30 @@
   const THEME_KEY = 'theme';
 
   /** State keys that are whole numbers (counts). Everything else numeric is a decimal. */
-  const INT_KEYS = ['treads1', 'treads2', 'landingCount', 'channelsPerLanding', 'stringersPerFlight'];
+  const INT_KEYS = ['treads1', 'treads2', 'landingCount', 'beamXCount', 'beamYCount', 'stringersPerFlight'];
+
+  /**
+   * The two landing-beam directions: `key` is the id / state-key prefix, `axis`
+   * the name passed to landingBeamLength().
+   *   X = across flight 1's travel (the old "landing channels")
+   *   Y = along flight 1's travel (landing edges, the U-stair well)
+   */
+  const BEAM_AXES = [
+    { axis: 'x', key: 'beamX' },
+    { axis: 'y', key: 'beamY' },
+  ];
+
+  /**
+   * Old saved keys (v1, single set of landing "channels") -> current keys.
+   * Applied on load only when the new key isn't saved yet; see loadState().
+   */
+  const LEGACY_KEYS = {
+    landingSection: 'beamXSection',
+    landingCustomLbFt: 'beamXCustomLbFt',
+    channelsPerLanding: 'beamXCount',
+    channelLengthAuto: 'beamXLengthAuto',
+    channelLengthOverride: 'beamXLengthOverride',
+  };
 
   /** Value of the extra "Custom…" option at the end of each section dropdown. */
   const CUSTOM = 'Custom';
@@ -108,11 +139,11 @@
      --------------------------------------------------------------------- */
 
   /**
-   * Fill the stringer and landing section dropdowns from SECTIONS (calc.js),
-   * each followed by a final "Custom…" option.
+   * Fill the stringer, X beam and Y beam section dropdowns from SECTIONS
+   * (calc.js), each followed by a final "Custom…" option.
    */
   function fillSectionSelects() {
-    ['stringerSection', 'landingSection'].forEach(function (id) {
+    ['stringerSection', 'beamXSection', 'beamYSection'].forEach(function (id) {
       const select = $(id);
       if (!select) return;
       select.textContent = '';
@@ -177,17 +208,42 @@
   }
 
   /**
-   * Load the saved state and merge it over DEFAULTS. Only known keys with the
-   * same type as the default are kept, so an old or damaged save can't break the page.
+   * Copy values saved under old key names (LEGACY_KEYS) onto the current names,
+   * unless the current name is already saved. Returns a new object; the old keys
+   * are dropped.
+   *   { channelsPerLanding: 3 } -> { beamXCount: 3 }
+   * @param {object} saved  parsed localStorage value
+   * @returns {{state: object, migrated: boolean}}
+   */
+  function migrateSaved(saved) {
+    const out = Object.assign({}, saved);
+    let migrated = false;
+    Object.keys(LEGACY_KEYS).forEach(function (oldKey) {
+      if (!(oldKey in out)) return;
+      const newKey = LEGACY_KEYS[oldKey];
+      if (!(newKey in out)) out[newKey] = out[oldKey];
+      delete out[oldKey];
+      migrated = true;
+    });
+    return { state: out, migrated: migrated };
+  }
+
+  /**
+   * Load the saved state (migrating old key names) and merge it over DEFAULTS.
+   * Only known keys with the same type as the default are kept, so an old or
+   * damaged save can't break the page. A migrated save is written straight back
+   * in the new format (same STORAGE_KEY).
    * @returns {object} a complete state object
    */
   function loadState() {
-    const saved = storageGet(STORAGE_KEY);
+    const raw = storageGet(STORAGE_KEY);
     const state = Object.assign({}, DEFAULTS);
-    if (saved && typeof saved === 'object') {
+    if (raw && typeof raw === 'object') {
+      const m = migrateSaved(raw);
       Object.keys(DEFAULTS).forEach(function (key) {
-        if (key in saved && typeof saved[key] === typeof DEFAULTS[key]) state[key] = saved[key];
+        if (key in m.state && typeof m.state[key] === typeof DEFAULTS[key]) state[key] = m.state[key];
       });
+      if (m.migrated) storageSet(STORAGE_KEY, state);
     }
     return state;
   }
@@ -197,8 +253,24 @@
      --------------------------------------------------------------------- */
 
   /**
+   * The automatic length of one landing beam on an axis, ignoring the override:
+   * X = landing width (landingWidth), Y = landing depth. Uses calc.js's
+   * landingBeamLength() when it exists, so the page and the estimate agree.
+   * @param {object} state  current state
+   * @param {'x'|'y'} axis  beam direction
+   * @returns {number} inches
+   */
+  function autoBeamLength(state, axis) {
+    if (typeof landingBeamLength === 'function') {
+      const forced = Object.assign({}, state, axis === 'x' ? { beamXLengthAuto: true } : { beamYLengthAuto: true });
+      return landingBeamLength(forced, axis);
+    }
+    return axis === 'x' ? landingWidth(state) : state.landingDepth;
+  }
+
+  /**
    * Show/hide the optional fields (el.hidden) for the current state, and show the
-   * automatic channel length next to the "Match landing width" switch.
+   * automatic beam length next to each "Match landing width/depth" switch.
    * @param {object} state  current state
    */
   function updateVisibility(state) {
@@ -207,16 +279,20 @@
       'field-treads2': state.orientation !== 'straight',
       'field-wellGap': isU,
       'field-stringerCustomLbFt': state.stringerSection === CUSTOM,
-      'field-landingCustomLbFt': state.landingSection === CUSTOM,
-      'field-channelLengthOverride': !state.channelLengthAuto,
     };
+    BEAM_AXES.forEach(function (b) {
+      toggles['field-' + b.key + 'CustomLbFt'] = state[b.key + 'Section'] === CUSTOM;
+      toggles['field-' + b.key + 'LengthOverride'] = !state[b.key + 'LengthAuto'];
+    });
     Object.keys(toggles).forEach(function (id) {
       const el = $(id);
       if (el) el.hidden = !toggles[id];
     });
 
-    const auto = $('channelLengthAutoValue');
-    if (auto) auto.textContent = '(' + fmtFtIn(landingWidth(state)) + ')';
+    BEAM_AXES.forEach(function (b) {
+      const out = $(b.key + 'LengthAutoValue');
+      if (out) out.textContent = '(' + fmtFtIn(autoBeamLength(state, b.axis)) + ')';
+    });
   }
 
   /**
@@ -268,6 +344,26 @@
   }
 
   /**
+   * One landing-beam row ("Landing beams — X (across)" / "— Y (along)").
+   * Detail line e.g. "C8x11.2 · 11.2 lb/ft · 2 × 4'-0"". If the result has no
+   * entry for the axis, the row shows a dash instead of throwing.
+   * @param {string} name   row name
+   * @param {object} [b]    result.beamsX or result.beamsY:
+   *                        { section, lbft, count, eachLengthIn, lengthFt, weightLb }
+   * @returns {object} a row for makeRow()
+   */
+  function beamRow(name, b) {
+    if (!b || typeof b !== 'object') return { name: name, detail: '—' };
+    return {
+      name: name,
+      detail: sectionLabel(b.section, b.lbft) + ' · ' + fmtNum(b.count) + ' × ' + fmtFtIn(b.eachLengthIn),
+      qty: fmtNum(b.count),
+      length: fmtNum(b.lengthFt, 1) + ' ft',
+      weight: fmtNum(b.weightLb) + ' lb',
+    };
+  }
+
+  /**
    * Fill the grand total, summary line, warnings list and breakdown table.
    * Add new cost rows here (see HOW TO EDIT at the top).
    * @param {object} result  return value of computeEstimate()
@@ -309,7 +405,6 @@
 
     // --- Breakdown table ---
     const s = result.stringers;
-    const ch = result.channels;
     // Cut lengths: "4 × 12'-2 1/4"" when all flights match, else per flight
     // ("F1 2 × 12'-2 1/4", F2 2 × 9'-8"").
     const lengths = result.flights.map(function (f) { return fmtFtIn(f.stringerLength); });
@@ -326,13 +421,8 @@
         length: fmtNum(s.lengthFt, 1) + ' ft',
         weight: fmtNum(s.weightLb) + ' lb',
       },
-      {
-        name: 'Landing channels',
-        detail: sectionLabel(ch.section, ch.lbft) + ' · ' + fmtNum(ch.count) + ' × ' + fmtFtIn(ch.eachLengthIn),
-        qty: fmtNum(ch.count),
-        length: fmtNum(ch.lengthFt, 1) + ' ft',
-        weight: fmtNum(ch.weightLb) + ' lb',
-      },
+      beamRow('Landing beams — X (across)', result.beamsX),
+      beamRow('Landing beams — Y (along)', result.beamsY),
       {
         name: 'Connections & misc allowance',
         detail: 'Clips, plates, angles, bolts, welds',
@@ -407,14 +497,19 @@
 
   /**
    * Form events (delegated: one listener on the form covers every input).
-   * When "Match landing width" is switched off, the override starts from the
-   * current landing width (rounded to 1/8") so the number doesn't jump.
+   * When a "Match landing width/depth" switch (beamXLengthAuto / beamYLengthAuto)
+   * is switched off, its override starts from the current automatic length
+   * (rounded to 1/8") so the number doesn't jump.
    * @param {Event} e  input or change event
    */
   function onFormEvent(e) {
-    if (e.type === 'change' && e.target && e.target.id === 'channelLengthAuto' && !e.target.checked) {
-      const width = landingWidth(readState());
-      $('channelLengthOverride').value = String(Math.round(width * 8) / 8);
+    const t = e.target;
+    if (e.type === 'change' && t && !t.checked) {
+      BEAM_AXES.forEach(function (b) {
+        if (t.id !== b.key + 'LengthAuto') return;
+        const len = autoBeamLength(readState(), b.axis);
+        $(b.key + 'LengthOverride').value = String(Math.round(len * 8) / 8);
+      });
     }
     update();
   }

@@ -4,9 +4,10 @@
  *
  * WHAT THIS FILE DOES
  *   Holds the channel section table (SECTIONS), the starting form values (DEFAULTS),
- *   and all the arithmetic: stair geometry, stringer and landing-channel weights,
- *   the cost roll-up, and the warnings. It also has the small formatters the page uses
- *   to show feet-inches, dollars and plain numbers.
+ *   and all the arithmetic: stair geometry, stringer and landing-beam weights (X beams
+ *   across the stair, Y beams along it), the cost roll-up, and the warnings. It also
+ *   has the small formatters the page uses to show feet-inches, dollars and plain
+ *   numbers.
  *
  *   There is NO page / DOM code in here. It only takes numbers in and gives numbers
  *   back, so it can be tested on its own with `node --test tests/`.
@@ -15,7 +16,8 @@
  *   index.html loads three classic scripts, in this order:
  *     1. js/calc.js  (this file)  — SECTIONS, DEFAULTS, computeEstimate(), fmtFtIn() ...
  *     2. js/plan.js              — renderPlan(svg, state) draws the plan view; it uses
- *                                  landingWidth() and fmtFtIn() from this file.
+ *                                  landingWidth(), landingBeamLength() and fmtFtIn()
+ *                                  from this file.
  *     3. js/app.js               — reads the form into a `state` object, calls
  *                                  computeEstimate(state) and renderPlan(svg, state),
  *                                  and fills the estimate table.
@@ -26,8 +28,15 @@
  *   The full contract (state keys, result shape) is in docs/ARCHITECTURE.md.
  *
  * HOW TO EDIT
- *   - Add a channel size: add a row { name, lbft, depth } to SECTIONS below. Both
- *     dropdowns on the page pick it up automatically.
+ *   - Add a channel size: add a row { name, lbft, depth } to SECTIONS below. All three
+ *     dropdowns on the page (stringers, X landing beams, Y landing beams) pick it up
+ *     automatically.
+ *   - Landing beams come in two directions, each with its own section, custom lb/ft,
+ *     count per landing, auto-length switch and length override:
+ *       X beams (beamX... keys) run ACROSS the stair; auto length = landingWidth().
+ *       Y beams (beamY... keys) run ALONG the stair (flight 1's direction of travel);
+ *       auto length = landingDepth.
+ *     landingBeamLength(state, 'x' | 'y') gives the length of one beam on either axis.
  *   - Change the default values or example rates: edit DEFAULTS below. These are the
  *     values the page starts with and the "Reset" button goes back to.
  *   - Add a cost line (e.g. galvanizing):
@@ -38,7 +47,7 @@
  */
 
 /*
- * SECTIONS — channel sizes offered for stringers and landing channels.
+ * SECTIONS — channel sizes offered for stringers and the X and Y landing beams.
  *   name:  the designation shown in the dropdown and on the plan
  *   lbft:  nominal weight, lb per foot (AISC)
  *   depth: nominal depth, inches
@@ -88,13 +97,22 @@ const DEFAULTS = {
   stringersPerFlight: 2,       // 2 = two outer cranked stringers; 4 = 2 outer + 2 inner
   crankAllowance: 12,          // in, extra length added to EACH stringer for cranks / bearing
 
-  // Landing channels
-  landingSection: 'C8x11.2',   // a SECTIONS name, or 'Custom'
-  landingCustomLbFt: 11,       // lb/ft, used when landingSection is 'Custom'
+  // Landings
   landingCount: 1,             // number of landings to price (all the same size)
-  channelsPerLanding: 2,       // landing channels per landing
-  channelLengthAuto: true,     // true = channel length is the landing width
-  channelLengthOverride: 44,   // in, channel length when channelLengthAuto is false
+
+  // X landing beams — run ACROSS the stair (across flight 1's direction of travel)
+  beamXSection: 'C8x11.2',     // a SECTIONS name, or 'Custom'
+  beamXCustomLbFt: 11,         // lb/ft, used when beamXSection is 'Custom'
+  beamXCount: 2,               // X beams per landing
+  beamXLengthAuto: true,       // true = each X beam is the landing width
+  beamXLengthOverride: 44,     // in, X beam length when beamXLengthAuto is false
+
+  // Y landing beams — run ALONG the stair (in flight 1's direction of travel)
+  beamYSection: 'C8x11.2',     // a SECTIONS name, or 'Custom'
+  beamYCustomLbFt: 11,         // lb/ft, used when beamYSection is 'Custom'
+  beamYCount: 2,               // Y beams per landing
+  beamYLengthAuto: true,       // true = each Y beam is the landing depth
+  beamYLengthOverride: 48,     // in, Y beam length when beamYLengthAuto is false
 
   // Prices (example rates)
   pricePerTread: 85,           // $ per tread (pan, grating, etc.)
@@ -143,7 +161,7 @@ function sectionWeight(name, customLbFt) {
 
 /**
  * Width of the landing across flight 1's direction of travel. This is also the
- * automatic landing-channel length, because the channels run across the landing.
+ * automatic X landing-beam length, because the X beams run across the landing.
  *
  * @param {object} state  the stair state (uses orientation, stairWidth, wellGap; inches)
  * @returns {number} landing width in inches
@@ -160,6 +178,29 @@ function landingWidth(state) {
 }
 
 /**
+ * Length of ONE landing beam on the given axis.
+ *   'x' — X beams run across the stair; auto length = landingWidth(state).
+ *   'y' — Y beams run along flight 1's direction of travel; auto length = landingDepth.
+ * When that axis's auto switch (beamXLengthAuto / beamYLengthAuto) is off, the typed
+ * override (beamXLengthOverride / beamYLengthOverride) is used instead.
+ * Any axis other than 'y' (or 'Y') counts as 'x'.
+ *
+ * @param {object} state  the stair state (inches)
+ * @param {string} axis   'x' or 'y'
+ * @returns {number} beam length in inches (>= 0)
+ */
+function landingBeamLength(state, axis) {
+  const s = state || {};
+  const isY = String(axis).toLowerCase() === 'y';
+  const auto = isY ? s.beamYLengthAuto : s.beamXLengthAuto;
+  // The switch is on unless it is explicitly false (or the text 'false' from a form).
+  if (auto !== false && auto !== 'false') {
+    return isY ? calcNum(s.landingDepth) : landingWidth(s);
+  }
+  return calcNum(isY ? s.beamYLengthOverride : s.beamXLengthOverride);
+}
+
+/**
  * Work out the full estimate: geometry, steel weights, costs and warnings.
  * Never throws and never returns NaN; bad or missing inputs count as 0.
  *
@@ -169,7 +210,8 @@ function landingWidth(state) {
  *   flights[]      { treads, risers, run, rise, stringerLength }  (inches; one stringer)
  *   totalTreads, totalRisers, totalRise (inches)
  *   stringers      { section, lbft, count, lengthFt, weightLb }        (lengthFt = all stringers)
- *   channels       { section, lbft, count, eachLengthIn, lengthFt, weightLb }
+ *   beamsX         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (X landing beams)
+ *   beamsY         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (Y landing beams)
  *   baseSteelLb, allowanceLb, totalSteelLb  (lb)
  *   costs          { steel, treads, labour, subtotal, markup, total }  ($)
  *   warnings[]     short plain-English strings
@@ -226,27 +268,32 @@ function computeEstimate(state) {
     weightLb: stringerLengthFt * stringerLbFt, // weight = feet x lb/ft
   };
 
-  // ---- Landing channels ----
-  const channelLbFt = sectionWeight(s.landingSection, s.landingCustomLbFt);
-  // Same number of channels on every landing.
-  const channelCount = calcInt(s.landingCount) * calcInt(s.channelsPerLanding);
-  // Channels run across the landing, so by default each one is as long as the landing
-  // is wide. The shop can type its own length instead (channelLengthAuto = false).
-  const channelAuto = s.channelLengthAuto !== false && s.channelLengthAuto !== 'false';
-  const eachLengthIn = channelAuto ? landingWidth(s) : calcNum(s.channelLengthOverride);
-  const channelLengthFt = (channelCount * eachLengthIn) / 12; // all channels, inches -> feet
-  const channels = {
-    section: s.landingSection,
-    lbft: channelLbFt,
-    count: channelCount,
-    eachLengthIn,
-    lengthFt: channelLengthFt,
-    weightLb: channelLengthFt * channelLbFt, // weight = feet x lb/ft
-  };
+  // ---- Landing beams (X across the stair, Y along it) ----
+  const landingCount = calcInt(s.landingCount);
+  // One axis at a time. Every landing gets the same beams, so the count is landings x
+  // beams per landing. By default an X beam is as long as the landing is wide and a
+  // Y beam as long as the landing is deep; the shop can type its own length instead
+  // (beamXLengthAuto / beamYLengthAuto = false), see landingBeamLength().
+  function landingBeams(section, customLbFt, perLanding, axis) {
+    const lbft = sectionWeight(section, customLbFt);
+    const count = landingCount * calcInt(perLanding);
+    const eachLengthIn = landingBeamLength(s, axis);
+    const lengthFt = (count * eachLengthIn) / 12; // all beams on this axis, inches -> feet
+    return {
+      section,
+      lbft,
+      count,
+      eachLengthIn,
+      lengthFt,
+      weightLb: lengthFt * lbft, // weight = feet x lb/ft
+    };
+  }
+  const beamsX = landingBeams(s.beamXSection, s.beamXCustomLbFt, s.beamXCount, 'x');
+  const beamsY = landingBeams(s.beamYSection, s.beamYCustomLbFt, s.beamYCount, 'y');
 
   // ---- Steel weight ----
-  // Main members only (stringers + landing channels).
-  const baseSteelLb = stringers.weightLb + channels.weightLb;
+  // Main members only (stringers + X and Y landing beams).
+  const baseSteelLb = stringers.weightLb + beamsX.weightLb + beamsY.weightLb;
   // Clips, plates, angles, bolts and welds are not taken off one by one; they are
   // covered by a percentage of the main-member weight.
   const allowanceLb = (baseSteelLb * calcNum(s.connectionAllowancePct)) / 100;
@@ -279,8 +326,16 @@ function computeEstimate(state) {
   if (orientation.indexOf('L-') === 0 && landingDepth < stairWidth) {
     warnings.push('Landing depth is less than the stair width — flight 2 of an L-stair needs a landing at least as deep as the stair is wide.');
   }
-  if (stringerLbFt === 0 || (channelCount > 0 && channelLbFt === 0)) {
-    warnings.push('A channel section weighs 0 lb/ft — pick a section or enter a custom lb/ft.');
+  // A 0 lb/ft section silently drops that steel from the price. Landing beams only
+  // matter when that axis actually has beams (count > 0).
+  if (stringerLbFt === 0) {
+    warnings.push('The stringer section weighs 0 lb/ft — pick a section or enter a custom lb/ft.');
+  }
+  if (beamsX.count > 0 && beamsX.lbft === 0) {
+    warnings.push('The X landing beam section weighs 0 lb/ft — pick a section or enter a custom lb/ft.');
+  }
+  if (beamsY.count > 0 && beamsY.lbft === 0) {
+    warnings.push('The Y landing beam section weighs 0 lb/ft — pick a section or enter a custom lb/ft.');
   }
 
   return {
@@ -289,7 +344,8 @@ function computeEstimate(state) {
     totalRisers,
     totalRise,
     stringers,
-    channels,
+    beamsX,
+    beamsY,
     baseSteelLb,
     allowanceLb,
     totalSteelLb,
@@ -355,4 +411,4 @@ function fmtNum(n, decimals = 0) {
   return text.replace(/^-(?=0(\.0+)?$)/, ''); // never show "-0"
 }
 
-if (typeof module !== 'undefined') module.exports = { SECTIONS, DEFAULTS, sectionWeight, landingWidth, computeEstimate, fmtFtIn, fmtMoney, fmtNum };
+if (typeof module !== 'undefined') module.exports = { SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, computeEstimate, fmtFtIn, fmtMoney, fmtNum };
