@@ -236,6 +236,15 @@
                 </div>
                 <p class="hint" id="hint-landingCount">All the same size</p>
               </div>
+              <!-- Landing deck: $/sq.ft over the landing area (shown in #deckAreaValue) -->
+              <div class="field">
+                <label for="deckRatePerSqFt">Deck</label>
+                <div class="input-unit">
+                  <input id="deckRatePerSqFt" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-deckRatePerSqFt">
+                  <span class="unit">$/sq.ft</span>
+                </div>
+                <p class="hint" id="hint-deckRatePerSqFt">Landing area <output id="deckAreaValue"></output></p>
+              </div>
             </div>
 
             <!-- X beams: across the stair -->
@@ -355,6 +364,7 @@
                   <input id="pricePerTread" type="number" inputmode="decimal" min="0" step="any">
                   <span class="unit">$/tread</span>
                 </div>
+                <p class="hint">Includes tread finish</p>
               </div>
 
               <div class="field">
@@ -400,7 +410,7 @@
                   <input id="finishRatePerFt" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-finishRatePerFt">
                   <span class="unit">$/ft</span>
                 </div>
-                <p class="hint" id="hint-finishRatePerFt">Per ft of stringers, landing beams and treads</p>
+                <p class="hint" id="hint-finishRatePerFt">Per ft of stringers and landing beams. Tread finish is included in the tread supply price.</p>
               </div>
             </div>
           </fieldset>
@@ -475,6 +485,28 @@
                   <span class="unit">$</span>
                 </div>
                 <p class="hint" id="hint-installationCost">Erection crew, equipment, travel — lump sum</p>
+              </div>
+            </div>
+          </fieldset>
+        </details>
+
+        <!-- --- Freight: one lump sum, not taxed --- -->
+        <details class="section" id="sec-freight" open>
+          <summary>
+            <span class="section-title">Freight</span>
+            <span class="section-sum" id="sum-freight"></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <fieldset>
+            <legend class="visually-hidden">Freight</legend>
+            <div class="fields">
+              <div class="field">
+                <label for="freightCost">Freight</label>
+                <div class="input-unit">
+                  <input id="freightCost" type="number" inputmode="decimal" min="0" step="any" aria-describedby="hint-freightCost">
+                  <span class="unit">$</span>
+                </div>
+                <p class="hint" id="hint-freightCost">Delivery to site — lump sum</p>
               </div>
             </div>
           </fieldset>

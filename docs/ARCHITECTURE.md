@@ -50,6 +50,7 @@ All lengths inside `state` and inside the calculations are **inches**. Weights a
 | `stringersPerFlight` | int | `2` | `2` = two outer cranked stringers; `4` = 2 cranked outer + 2 inner (PDF examples 1 & 4) |
 | `crankAllowance` | number (in) | `12` | extra length added to **each** stringer for cranked ends / bearing |
 | `landingCount` | int | `1` | number of landings to price (all the same size) |
+| `deckRatePerSqFt` | number $/sq.ft | `0` | landing deck, priced on landingWidth × landingDepth × landingCount; taxed with materials (PST) |
 | `beamXSection` | string | `'C8x11.2'` | **X landing beams** (run *across* the stair, i.e. across flight 1's travel): a `SECTIONS` name, or `'Custom'` |
 | `beamXCustomLbFt` | number | `11` | lb/ft used when `beamXSection === 'Custom'` |
 | `beamXCount` | int | `2` | X beams per landing |
@@ -64,11 +65,12 @@ All lengths inside `state` and inside the calculations are **inches**. Weights a
 | `pricePerLb` | number $ | `1.6` | channel steel cost per lb |
 | `connectionAllowancePct` | number % | `15` | extra steel weight for clips, plates, angles, bolts, welds |
 | `finishType` | string | `'SP3/Standard Primer'` | a `FINISHES` name (finish dropdown) |
-| `finishRatePerFt` | number $/ft | `0` | finish price per ft of stringers + landing beams + treads (each tread = one stair width) |
+| `finishRatePerFt` | number $/ft | `0` | finish price per ft of stringers + landing beams. Treads are excluded: the tread finish is in `pricePerTread` |
 | `labourHours` | number | `standardLabourHours(DEFAULTS)` (52 for the default stair) | total shop hours. The default is worked out **once** from the default stair by `standardLabourHours()` in `calc.js`; after that it is a plain number the user edits. It does not follow later changes to the stair |
 | `shopRate` | number $/hr | `100` | labour rate |
 | `detailingCost` | number $ | `0` | detailing (shop drawings), one lump sum |
 | `installationCost` | number $ | `0` | installation (erection crew, equipment, travel), one lump sum |
+| `freightCost` | number $ | `0` | freight / delivery, one lump sum; not taxed |
 | `markupPct` | number % | `0` | applied to the subtotal |
 | `pstPct` | number % | `7` | PST (BC rate), charged on **materials only** (steel + treads), added after markup. GST is excluded |
 
@@ -123,7 +125,8 @@ dropdown option.
   baseSteelLb,                     // stringers.weightLb + beamsX.weightLb + beamsY.weightLb
   allowanceLb,                     // baseSteelLb x connectionAllowancePct / 100
   totalSteelLb,                    // baseSteelLb + allowanceLb
-  costs: { steel, treads, labour, detailing, installation, subtotal, markup, pst, total },   // + costs.finish
+  costs: { steel, treads, labour, detailing, installation, subtotal, markup, pst, total },   // + costs.deck, costs.finish, costs.freight
+  deck: { sqFt },  finish: { type, lengthFt },
   warnings: [ 'string', ... ]      // gentle checks, e.g. riser > 7 7/8", tread < 10", treads < 1
 }
 ```
@@ -135,9 +138,11 @@ Formulas:
 * `costs.steel = totalSteelLb × pricePerLb`, `costs.treads = totalTreads × pricePerTread`,
   `costs.labour = labourHours × shopRate`, `costs.detailing = detailingCost`,
   `costs.installation = installationCost`,
-  `costs.finish = finishRatePerFt × finish.lengthFt` where `finish.lengthFt` = all stringers + all landing beams + treads × stairWidth,
-  `subtotal = steel + treads + finish + labour + detailing + installation`,
-  `markup = subtotal × markupPct / 100`, `pst = (steel + treads) × pstPct / 100`,
+  `costs.deck = deckRatePerSqFt × deck.sqFt` (deck.sqFt = landingCount × landingWidth × landingDepth / 144),
+  `costs.finish = finishRatePerFt × finish.lengthFt` where `finish.lengthFt` = all stringers + all landing beams,
+  `costs.freight = freightCost`,
+  `subtotal = steel + treads + deck + finish + labour + detailing + installation + freight`,
+  `markup = subtotal × markupPct / 100`, `pst = (steel + treads + deck) × pstPct / 100`,
   `total = subtotal + markup + pst` (GST excluded)
 
 Hand check: 19 treads @ 11", 7" risers, 2 × C12x20.7, 12" allowance →
@@ -225,6 +230,7 @@ heading. Order and ids:
 | `sec-labour` | Labour | e.g. `52 hrs @ $100.00 / hr` |
 | `sec-detailing` | Detailing | e.g. `$1,200.00` |
 | `sec-installation` | Installation | e.g. `$3,500.00` |
+| `sec-freight` | Freight | e.g. `$500.00` |
 | `sec-markup` | Markup | e.g. `0%` |
 | `sec-pst` | PST | e.g. `7% on materials` |
 

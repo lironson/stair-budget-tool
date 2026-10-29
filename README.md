@@ -20,13 +20,16 @@ and works out material and labour cost as you type.
   (X) or depth (Y) automatically, or you can set it yourself.
 - **Material**: $/tread, $/lb of channel, and a % allowance for connections and misc steel.
 - **Finishes**: pick a finish (SP3/Standard Primer to start; more can be added in
-  `js/calc.js`) and a $/ft rate, priced over the stringers, landing beams and treads.
+  `js/calc.js`) and a $/ft rate, priced over the stringers and landing beams. The tread
+  finish is part of the tread supply price.
+- **Landing deck**: a $/sq.ft rate priced on the landing area (all landings).
 - **Labour**: total shop hours × shop rate. The starting hours are a standard figure for
   the default stair; type over them with your own.
 - **Detailing** and **Installation**: one lump-sum line each (shop drawings; erection crew,
   equipment and travel).
+- **Freight**: one lump-sum line.
 - **Markup**: an optional % on the subtotal (0% to start).
-- **PST**: 7% (BC) on materials only, meaning the steel and treads. GST is not included.
+- **PST**: 7% (BC) on materials only, meaning the steel, treads and landing deck. GST is not included.
 - **Collapsible sections**: each input group folds away and shows a one-line summary. Your
   browser remembers which ones you left open.
 - **One-page print**: *Print estimate* gives a single Letter page with the plan and the

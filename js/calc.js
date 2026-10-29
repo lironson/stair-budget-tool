@@ -117,6 +117,7 @@ const DEFAULTS = {
 
   // Landings
   landingCount: 1,             // number of landings to price (all the same size)
+  deckRatePerSqFt: 0,          // $ per sq.ft of landing deck (landing width x depth, every landing)
 
   // X landing beams — run ACROSS the stair (across flight 1's direction of travel)
   beamXSection: 'C8x11.2',     // a SECTIONS name, or 'Custom'
@@ -142,6 +143,7 @@ const DEFAULTS = {
   shopRate: 100,               // $ per hour
   detailingCost: 0,            // $ lump sum — detailing / shop drawings
   installationCost: 0,         // $ lump sum — installation / erection
+  freightCost: 0,              // $ lump sum — freight / delivery
   markupPct: 0,                // % applied to the subtotal
   pstPct: 7,                   // % PST (BC rate), charged on materials only: steel + treads
 };
@@ -295,12 +297,14 @@ DEFAULTS.labourHours = standardLabourHours(DEFAULTS);
  *   stringers      { section, lbft, count, lengthFt, weightLb }        (lengthFt = all stringers)
  *   beamsX         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (X landing beams)
  *   beamsY         { section, lbft, count, eachLengthIn, lengthFt, weightLb }  (Y landing beams)
- *   finish         { type, lengthFt, treadFt }  ft of stringers + beams + treads (tread = stair width)
+ *   deck           { sqFt }  landing deck area, all landings
+ *   finish         { type, lengthFt }  ft of stringers + landing beams (treads excluded)
  *   baseSteelLb, allowanceLb, totalSteelLb  (lb)
  *   costs          { steel, treads, labour, detailing, installation, subtotal, markup, pst, total }  ($)
- *                  finish = finishRatePerFt x finish.lengthFt (not taxed)
+ *                  deck = deckRatePerSqFt x deck.sqFt (taxed with steel + treads);
+ *                  finish = finishRatePerFt x finish.lengthFt; freight = freightCost (neither taxed)
  *                  detailing / installation are the detailingCost / installationCost lump sums;
- *                  pst = pstPct x (steel + treads), materials only; GST is not included
+ *                  pst = pstPct x (steel + treads + deck), materials only; GST is not included
  *   warnings[]     short plain-English strings
  */
 function computeEstimate(state) {
@@ -389,22 +393,27 @@ function computeEstimate(state) {
   // lines always sum exactly to the printed subtotal and total.
   const steel = calcCents(totalSteelLb * calcNum(s.pricePerLb));          // material: steel bought by the lb
   const treadsCost = calcCents(totalTreads * calcNum(s.pricePerTread));   // material: treads bought by the piece
-  // Finish (e.g. SP3 / standard primer): $/ft x finish footage. The footage is
-  // every stringer + every landing beam + every tread, each tread counted as one
-  // stair width long (the tread spans the stair from stringer to stringer).
-  const treadFt = (totalTreads * stairWidth) / 12;
-  const finishFt = stringers.lengthFt + beamsX.lengthFt + beamsY.lengthFt + treadFt;
+  // Landing deck: $/sq.ft x deck area. Each landing is landingWidth() (the full
+  // width across both flights on a U-stair) x landingDepth; every landing the same.
+  const deckSqFt = (calcInt(s.landingCount) * landingWidth(s) * landingDepth) / 144; // sq.in -> sq.ft
+  const deckCost = calcCents(deckSqFt * calcNum(s.deckRatePerSqFt));
+  // Finish (e.g. SP3 / standard primer): $/ft x finish footage = every stringer +
+  // every landing beam. Treads are NOT included: the tread finish is part of the
+  // tread supply price (pricePerTread).
+  const finishFt = stringers.lengthFt + beamsX.lengthFt + beamsY.lengthFt;
   const finishCost = calcCents(finishFt * calcNum(s.finishRatePerFt));
   const labour = calcCents(calcNum(s.labourHours) * calcNum(s.shopRate)); // shop hours x hourly rate
   const detailing = calcCents(calcNum(s.detailingCost));                  // lump sum: shop drawings
   const installation = calcCents(calcNum(s.installationCost));            // lump sum: erection
-  const subtotal = calcCents(steel + treadsCost + finishCost + labour + detailing + installation);
+  const freight = calcCents(calcNum(s.freightCost));                      // lump sum: delivery
+  const subtotal = calcCents(steel + treadsCost + deckCost + finishCost + labour + detailing + installation + freight);
   const markup = calcCents((subtotal * calcNum(s.markupPct)) / 100);      // overhead / profit on top of cost
-  // PST (provincial sales tax) on materials only: the steel and the treads. Labour,
-  // detailing, installation and markup are not taxed. GST is left out of the estimate.
-  const pst = calcCents(((steel + treadsCost) * calcNum(s.pstPct)) / 100);
+  // PST (provincial sales tax) on materials only: the steel, the treads and the landing
+  // deck. Finish, labour, detailing, installation, freight and markup are not taxed.
+  // GST is left out of the estimate.
+  const pst = calcCents(((steel + treadsCost + deckCost) * calcNum(s.pstPct)) / 100);
   const total = calcCents(subtotal + markup + pst);
-  const costs = { steel, treads: treadsCost, finish: finishCost, labour, detailing, installation, subtotal, markup, pst, total };
+  const costs = { steel, treads: treadsCost, deck: deckCost, finish: finishCost, labour, detailing, installation, freight, subtotal, markup, pst, total };
 
   // ---- Warnings (gentle checks, not a code review) ----
   // 7 3/4" is a common residential maximum and 7" a common commercial one; 7 7/8" is
@@ -443,7 +452,8 @@ function computeEstimate(state) {
     totalRise,
     stringers,
     beamsX,
-    finish: { type: String(s.finishType || ''), lengthFt: finishFt, treadFt: treadFt },
+    deck: { sqFt: deckSqFt },
+    finish: { type: String(s.finishType || ''), lengthFt: finishFt },
     beamsY,
     baseSteelLb,
     allowanceLb,

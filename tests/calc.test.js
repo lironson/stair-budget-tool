@@ -106,7 +106,7 @@ test('DEFAULTS: new cost keys and example rates', () => {
   // labourHours sits next to shopRate; the lump sums sit between shopRate and markupPct; PST last.
   const keys = Object.keys(DEFAULTS);
   assert.deepEqual(keys.slice(keys.indexOf('labourHours')),
-    ['labourHours', 'shopRate', 'detailingCost', 'installationCost', 'markupPct', 'pstPct']);
+    ['labourHours', 'shopRate', 'detailingCost', 'installationCost', 'freightCost', 'markupPct', 'pstPct']);
 });
 
 test('standardLabourHours: straight stair, 4 stringers, 12 treads, 1 landing of 2 X beams', () => {
@@ -403,10 +403,10 @@ test('fmtMoney and fmtNum', () => {
 });
 
 test('money lines are rounded to the cent and add up exactly', () => {
-  const r = computeEstimate(DEFAULTS);
+  const r = computeEstimate({ ...DEFAULTS, deckRatePerSqFt: 12.37, finishRatePerFt: 2.33, freightCost: 450.5, markupPct: 7.5 });
   const c = r.costs;
   for (const k of Object.keys(c)) assert.equal(Math.round(c[k] * 100) / 100, c[k], k + ' is whole cents');
-  assert.equal(Math.round((c.steel + c.treads + c.labour + c.detailing + c.installation) * 100), Math.round(c.subtotal * 100));
+  assert.equal(Math.round((c.steel + c.treads + c.deck + c.finish + c.labour + c.detailing + c.installation + c.freight) * 100), Math.round(c.subtotal * 100));
   assert.equal(Math.round((c.subtotal + c.markup + c.pst) * 100), Math.round(c.total * 100));
 });
 
@@ -422,7 +422,7 @@ test('PST: charged on materials only (steel + treads), after markup', () => {
   assert.equal(computeEstimate({ ...DEFAULTS, pstPct: 'abc' }).costs.pst, 0);
 });
 
-test('finish: $/ft over stringers + landing beams + treads (tread = stair width)', () => {
+test('finish: $/ft over stringers + landing beams only (treads excluded)', () => {
   assert.ok(FINISHES.some((f) => f.name === 'SP3/Standard Primer'));
   assert.equal(DEFAULTS.finishType, 'SP3/Standard Primer');
   assert.equal(DEFAULTS.finishRatePerFt, 0);
@@ -431,18 +431,47 @@ test('finish: $/ft over stringers + landing beams + treads (tread = stair width)
   assert.equal(zero.costs.finish, 0);                 // default rate 0 -> no cost
 
   const r = computeEstimate({ ...DEFAULTS, finishRatePerFt: 2.5 });
-  const treadFt = (20 * 44) / 12;                     // 20 treads x 44" wide
-  const ft = r.stringers.lengthFt + r.beamsX.lengthFt + r.beamsY.lengthFt + treadFt;
-  near(r.finish.treadFt, treadFt, 1e-9);
+  const ft = r.stringers.lengthFt + r.beamsX.lengthFt + r.beamsY.lengthFt;
   near(r.finish.lengthFt, ft, 1e-9);
+  near(r.finish.lengthFt, 72.09, 0.01);               // ~48.76 + 15.33 + 8.0 on the default stair
+  assert.equal(r.finish.treadFt, undefined);          // treads no longer counted
   near(r.costs.finish, ft * 2.5, 0.006);
   assert.equal(r.finish.type, 'SP3/Standard Primer');
-  // In the subtotal, not taxed (PST is materials only).
+  // In the subtotal, not taxed.
   near(r.costs.subtotal - zero.costs.subtotal, r.costs.finish, 0.011);
   assert.equal(r.costs.pst, zero.costs.pst);
-  // No beams and a straight stair: stringers + treads only.
-  const s = computeEstimate({ ...DEFAULTS, orientation: 'straight', treads1: 12, beamXCount: 0, beamYCount: 0, finishRatePerFt: 1 });
-  near(s.finish.lengthFt, s.stringers.lengthFt + (12 * 44) / 12, 1e-9);
+  // More treads do not change the finish footage.
+  const more = computeEstimate({ ...DEFAULTS, finishRatePerFt: 2.5, treads1: 15 });
+  near(more.finish.lengthFt - more.stringers.lengthFt, r.finish.lengthFt - r.stringers.lengthFt, 1e-9);
   // Garbage rate -> 0, no NaN.
   assert.equal(computeEstimate({ ...DEFAULTS, finishRatePerFt: 'x' }).costs.finish, 0);
+});
+
+test('landing deck: $/sq.ft over every landing, taxed with materials', () => {
+  assert.equal(DEFAULTS.deckRatePerSqFt, 0);
+  const zero = computeEstimate(DEFAULTS);
+  near(zero.deck.sqFt, (92 * 48) / 144, 1e-9);        // U-right: 2 x 44 + 4 wide, 48 deep = 30.67 sq.ft
+  assert.equal(zero.costs.deck, 0);
+
+  const r = computeEstimate({ ...DEFAULTS, deckRatePerSqFt: 12 });
+  near(r.costs.deck, 368, 0.006);                      // 30.667 x $12
+  near(r.costs.subtotal - zero.costs.subtotal, 368, 0.011);
+  near(r.costs.pst - zero.costs.pst, 368 * 0.07, 0.011);  // deck is a material: PST applies
+
+  const L = computeEstimate({ ...DEFAULTS, orientation: 'L-right', deckRatePerSqFt: 1 });
+  near(L.deck.sqFt, (44 * 48) / 144, 1e-9);
+  const two = computeEstimate({ ...DEFAULTS, landingCount: 2 });
+  near(two.deck.sqFt, 2 * zero.deck.sqFt, 1e-9);
+  assert.equal(computeEstimate({ ...DEFAULTS, landingCount: 0, deckRatePerSqFt: 12 }).costs.deck, 0);
+  assert.equal(computeEstimate({ ...DEFAULTS, deckRatePerSqFt: 'x' }).costs.deck, 0);
+});
+
+test('freight: lump sum in the subtotal, not taxed', () => {
+  assert.equal(DEFAULTS.freightCost, 0);
+  const zero = computeEstimate(DEFAULTS);
+  const r = computeEstimate({ ...DEFAULTS, freightCost: 500 });
+  assert.equal(r.costs.freight, 500);
+  near(r.costs.total - zero.costs.total, 500, 0.011);
+  assert.equal(r.costs.pst, zero.costs.pst);
+  assert.equal(computeEstimate({ ...DEFAULTS, freightCost: '' }).costs.freight, 0);
 });

@@ -371,6 +371,13 @@
       const out = $(b.key + 'LengthAutoValue');
       if (out) out.textContent = '(' + fmtFtIn(autoBeamLength(state, b.axis)) + ')';
     });
+
+    // Landing deck area (one landing x landingCount), shown under the Deck rate.
+    const deckOut = $('deckAreaValue');
+    if (deckOut && typeof landingWidth === 'function') {
+      const sqFt = (state.landingCount * landingWidth(state) * state.landingDepth) / 144;
+      deckOut.textContent = fmtNum(sqFt, 1) + ' sq.ft';
+    }
   }
 
   /**
@@ -521,10 +528,19 @@
         cost: fmtMoney(c.treads),
       },
       {
-        // Finish: $/ft over stringers + landing beams + treads (finish.lengthFt).
+        // Landing deck: $/sq.ft over every landing's area (deck.sqFt).
+        name: 'Landing deck',
+        detail: (result.deck ? fmtNum(result.deck.sqFt, 1) : '0') + ' sq.ft @ ' +
+          fmtMoney(state.deckRatePerSqFt) + ' / sq.ft',
+        qty: result.deck ? fmtNum(result.deck.sqFt, 1) + ' sq.ft' : '',
+        cost: fmtMoney(c.deck || 0),
+      },
+      {
+        // Finish: $/ft over stringers + landing beams (finish.lengthFt). Tread
+        // finish is part of the tread supply price.
         name: 'Finish',
         detail: (result.finish ? result.finish.type : state.finishType) + ' · ' +
-          fmtMoney(state.finishRatePerFt) + ' / ft',
+          fmtMoney(state.finishRatePerFt) + ' / ft · stringers + beams',
         length: result.finish ? fmtNum(result.finish.lengthFt, 1) + ' ft' : '',
         cost: fmtMoney(c.finish || 0),
       },
@@ -537,10 +553,11 @@
       // Lump sums: Cost column only.
       { name: 'Detailing', detail: 'Shop drawings — lump sum', cost: fmtMoney(c.detailing) },
       { name: 'Installation', detail: 'Erection — lump sum', cost: fmtMoney(c.installation) },
+      { name: 'Freight', detail: 'Delivery — lump sum', cost: fmtMoney(c.freight || 0) },
       { name: 'Subtotal', cost: fmtMoney(c.subtotal), className: 'row-sub' },
       { name: 'Markup', qty: fmtQty(state.markupPct) + '%', cost: fmtMoney(c.markup) },
-      // PST is charged on materials only (steel + treads), after markup.
-      { name: 'PST', detail: 'On materials: steel + treads', qty: fmtQty(state.pstPct) + '%', cost: fmtMoney(c.pst) },
+      // PST is charged on materials only (steel, treads, landing deck), after markup.
+      { name: 'PST', detail: 'On materials: steel, treads, deck', qty: fmtQty(state.pstPct) + '%', cost: fmtMoney(c.pst) },
       { name: 'Total', detail: 'GST excluded', cost: fmtMoney(c.total), className: 'row-total' },
     ];
 
@@ -607,6 +624,7 @@
         parts.push(b.axis.toUpperCase() + ' ' + fmtNum(s[b.key + 'Count']) + ' × ' +
           shortSection(s[b.key + 'Section'], s[b.key + 'CustomLbFt']));
       });
+      if (s.deckRatePerSqFt > 0) parts.push('deck ' + fmtMoney(s.deckRatePerSqFt) + ' / sq.ft');
       return parts.join(' · ');
     },
     // "$85.00 / tread · $1.60 / lb"
@@ -625,6 +643,8 @@
     detailing: function (s) { return fmtMoney(s.detailingCost); },
     // "$3,500.00"
     installation: function (s) { return fmtMoney(s.installationCost); },
+    // "$500.00"
+    freight: function (s) { return fmtMoney(s.freightCost); },
     // "0%"
     markup: function (s) { return fmtQty(s.markupPct) + '%'; },
     pst: function (s) { return fmtQty(s.pstPct) + '% on materials'; },

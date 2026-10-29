@@ -630,12 +630,12 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
    12. PRINT  — exactly ONE Letter page (docs/ARCHITECTURE.md §5 "Print")
    Order on paper: compact header · plan sheet · estimate (total + summary,
    warnings, table) · disclaimer and example-values note in small print.
-   Height budget (10in of printable height): header ~0.5in, plan 3.8in + title
-   strip, estimate ~3.9in (14 table rows, incl. Finish and PST), small print
+   Height budget (10in of printable height): header ~0.5in, plan 3.4in + title
+   strip, estimate ~4.3in (16 table rows, incl. Deck, Finish, Freight, PST), small print
    ~0.3in. The spare height is what the warnings list uses when it shows up.
 
    TO GIVE THE PLAN MORE OR LESS ROOM: change --print-plan-h below. Lower it
-   freely. 3.8in leaves room for every warning to show; with no warnings up to
+   freely. 3.4in leaves room for every warning to show; with no warnings up to
    ~5in fits. The svg uses preserveAspectRatio
    "meet", so any drawing (25-tread L, 30-tread straight run…) scales down to fit
    that box instead of overflowing. If you add table rows, warnings or make the
@@ -656,7 +656,7 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
      lines and figures keep the orange (--plan-dim), where it reads well. */
   :root,
   :root[data-theme] {
-    --print-plan-h: 3.8in;  /* plan drawing height: the main knob, see above */
+    --print-plan-h: 3.4in;  /* plan drawing height: the main knob, see above */
 
     --bg: #ffffff;
     --ink: #000000;
