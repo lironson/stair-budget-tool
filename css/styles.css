@@ -4,7 +4,8 @@
  *
  * LAYOUT CONCEPT
  *   A working tool laid out like a shop drawing: inputs on the left, the live
- *   "drawing sheet" (plan view + title strip) on the right with the estimate under
+ *   "drawing sheet" (plan view, plus the upper-landing view beside it when there
+ *   are 2+ landings, and a title strip) on the right with the estimate under
  *   it. Sections are separated by thin rules, not cards. Below 900px everything
  *   stacks in one column in this order: PLAN first (compact), then INPUTS, then the
  *   ESTIMATE, because the plan is the main feature.
@@ -25,7 +26,10 @@
  *   - Plan colours: the --plan-* tokens (light and dark blocks).
  *   - Column widths / breakpoint: section 4 (900px breakpoint).
  *   - Collapsible input sections (<details class="section">, summary heading,
- *     .section-sum text shown only when collapsed, .chevron): section 5.
+ *     .section-sum text shown only when collapsed, .chevron): section 5. The
+ *     "Collapse all / Expand all" text button (.btn-text): section 7.
+ *   - Plan sheet (#plan and the upper-landing view #planUpperWrap side by side,
+ *     about 62 / 38, stacked under 600px): section 8. Print sizes: section 12.
  *   - Theme: data-theme="light" | "dark" on <html>, set by the inline script in
  *     index.html and the "Dark mode" switch (localStorage key 'theme').
  */
@@ -210,7 +214,8 @@ h1 i { font-style: normal; color: var(--accent); }
    tall enough for the whole column to fit; otherwise it would hide the table. */
 @media (min-width: 900px) and (min-height: 980px) {
   .output { position: sticky; top: 16px; }
-  #plan { max-height: 48vh; }
+  #plan,
+  #planUpper { max-height: 48vh; }
 }
 
 /* =========================================================================
@@ -230,7 +235,7 @@ h1 i { font-style: normal; color: var(--accent); }
   border-top: 1px solid var(--faint);
   min-width: 0;
 }
-.section:first-child { border-top: 0; }
+.section:first-of-type { border-top: 0; }  /* first-of-type: #toggleAllBtn comes first */
 
 .section > summary {
   display: flex;
@@ -243,7 +248,7 @@ h1 i { font-style: normal; color: var(--accent); }
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-.section:first-child > summary { padding-top: 0; }
+.section:first-of-type > summary { padding-top: 0; }
 .section > summary::-webkit-details-marker { display: none; }  /* Safari */
 .section > summary::marker { content: ""; }
 .section > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -456,6 +461,29 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 }
 .btn--ghost:hover { box-shadow: none; }
 
+/* Text button ("Collapse all" / "Expand all" above the input sections): no fill,
+   no border, small uppercase label in muted grey, orange on hover. */
+.btn-text {
+  align-self: flex-end;          /* right-aligned in the .inputs column */
+  margin: 0 0 6px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: 600 12px var(--f-display);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Hover only for real pointers (as the section headers), so a tap doesn't leave it lit. */
+@media (hover: hover) {
+  .btn-text:hover { color: var(--accent); }
+}
+.btn-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* =========================================================================
    8. PLAN SHEET  (thin frame, no coloured paper, title strip under it)
    ========================================================================= */
@@ -463,8 +491,24 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .sheet { display: flex; flex-direction: column; min-width: 0; }
 
 .sheet-frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   border: 1px solid var(--faint);
   background: var(--plan-paper);
+}
+
+/* With the upper-landing view showing (2+ landings): main plan | upper landing,
+   about 62 / 38, split by a 1px --faint rule. The row height comes from #plan
+   alone; the upper svg fills that height (absolutely positioned), so neither
+   view can grow the sheet. Without :has() support it simply stacks. */
+.sheet-frame:has(> #planUpperWrap:not([hidden])) {
+  grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
+}
+/* Split on screen: #plan is 62% wide but keeps the whole frame's 4:3 height
+   (0.75 x the full width), so the main drawing doesn't shrink; same max-heights
+   as below. (Print sets a fixed height instead; phones stack at 4:3.) */
+@media screen and (min-width: 600px) {
+  .sheet-frame:has(> #planUpperWrap:not([hidden])) > #plan { aspect-ratio: 62 / 75; }
 }
 
 #plan {
@@ -474,6 +518,33 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   aspect-ratio: 4 / 3;
   max-height: 70vh;
   background: var(--plan-paper);
+}
+
+#planUpperWrap {
+  position: relative;
+  min-width: 0;
+  border-left: 1px solid var(--faint);
+  background: var(--plan-paper);
+}
+#planUpper {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--plan-paper);
+}
+
+/* Phones: stack the upper-landing view under the main plan, sized like #plan. */
+@media (max-width: 599px) {
+  .sheet-frame:has(> #planUpperWrap:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
+  #planUpperWrap { border-left: 0; border-top: 1px solid var(--faint); }
+  #planUpper {
+    position: static;
+    height: auto;
+    aspect-ratio: 4 / 3;
+    max-height: 50vh;
+  }
 }
 
 /* Title strip: like the title block on a drawing. Cells are separated by 1px
@@ -500,6 +571,12 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 /* Compact plan on narrow screens so the inputs are close by. */
 @media (max-width: 899px) {
   #plan { max-height: 50vh; }
+}
+/* Below 600px the views stack, each up to 50vh. Fallback when :has() isn't
+   supported: the upper view sits under the plan at any width. */
+@supports not selector(:has(*)) {
+  #planUpperWrap { border-left: 0; border-top: 1px solid var(--faint); }
+  #planUpper { position: static; height: auto; aspect-ratio: 4 / 3; max-height: 50vh; }
 }
 
 /* =========================================================================
@@ -631,7 +708,8 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
    Order on paper: compact header · plan sheet · estimate (total + summary,
    warnings, table) · disclaimer and example-values note in small print.
    Height budget (10in of printable height): header ~0.5in, plan 3.4in + title
-   strip, estimate ~4.3in (16 table rows, incl. Deck, Finish, Freight, PST), small print
+   strip (with 2+ landings the upper-landing view sits beside the plan, about
+   62 / 38, inside the same 3.4in-high box, so the height doesn't change), estimate ~4.3in (16 table rows, incl. Deck, Finish, Freight, PST), small print
    ~0.3in. The spare height is what the warnings list uses when it shows up.
 
    TO GIVE THE PLAN MORE OR LESS ROOM: change --print-plan-h below. Lower it
@@ -677,10 +755,11 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   body { font-size: 9pt; line-height: 1.3; }
 
   /* Hide everything interactive: the input form and its collapsible sections,
-     buttons, the dark-mode switch and any stray form control. */
+     buttons (incl. "Collapse all"), the dark-mode switch and any stray form control. */
   .inputs,
   details.section,
   .actions,
+  .btn-text,
   button,
   .switch,
   input,
@@ -722,12 +801,33 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   h1 { font-size: 16pt; }
   .subtitle { font-size: 7.5pt; }
 
-  /* --- Plan sheet: full content width, fixed-height box (see top). --- */
+  /* --- Plan sheet: full content width, fixed-height box (see top). ---
+     A flex row here (not the screen grid, so it needs no :has()):
+     1 landing: #planUpperWrap is hidden and #plan grows to the full width, as
+     before. 2+ landings: #plan | upper landing, 62 / 38, a 1px rule between.
+     The row is --print-plan-h high (from #plan); #planUpper fills that height,
+     so the sheet is the same height either way and still fits the one page. */
   .sheet { break-inside: avoid; page-break-inside: avoid; }
-  .sheet-frame { border-color: var(--faint); }
+  .sheet-frame { display: flex; border-color: var(--faint); }
   #plan {
-    width: 100%;
+    flex: 62 1 0;
+    min-width: 0;
+    width: auto;
     height: var(--print-plan-h);
+    max-height: none;
+    aspect-ratio: auto;
+  }
+  #planUpperWrap {
+    flex: 38 1 0;
+    position: relative;
+    border-top: 0;
+    border-left: 1px solid var(--faint);
+  }
+  #planUpper {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     max-height: none;
     aspect-ratio: auto;
   }

@@ -10,21 +10,27 @@
  *      merged over DEFAULTS, and writes them into the form. Saves made before the
  *      landings had X and Y beams (keys landingSection, channelsPerLanding, …) are
  *      migrated onto the X beam keys (see LEGACY_KEYS). Saves made before schema 2
- *      drop the old example labour / markup values (see OLD_DEFAULTS).
+ *      drop the old example labour / markup values (see OLD_DEFAULTS). Old
+ *      orientation values ('L-left', 'U-right', …) become 'L' / 'U' (see
+ *      normOrientation) and the save is rewritten in the new form.
  *   3. On every keystroke / change: reads the form into a `state` object, shows or
  *      hides the optional fields, runs computeEstimate(state), fills the estimate
- *      table, redraws the plan with renderPlan(svg, state), refreshes the one-line
- *      summaries of the collapsible input sections and saves the state.
+ *      table, redraws the plan with renderPlan(svg, state) and, with 2+ landings,
+ *      the upper-landing view with renderUpperLanding(svg, state) (#planUpperWrap
+ *      is hidden otherwise), refreshes the title strip and the one-line summaries
+ *      of the collapsible input sections and saves the state.
  *   4. Remembers which input sections (<details class="section">) each viewer has
- *      open or closed (localStorage key 'stairBudgetTool.sections').
+ *      open or closed (localStorage key 'stairBudgetTool.sections'), and runs the
+ *      "Collapse all / Expand all" button (#toggleAllBtn) above them.
  *   5. Handles the Print, Reset and Dark mode controls.
  *
  * HOW IT CONNECTS TO THE OTHER FILES
  *   index.html loads js/calc.js, then js/plan.js, then this file (classic scripts).
  *   From calc.js it uses: DEFAULTS, SECTIONS, computeEstimate, landingBeamLength
  *                         (falls back to landingWidth / landingDepth if missing),
+ *                         normalizeOrientation (local fallback if missing),
  *                         fmtFtIn, fmtMoney, fmtNum.
- *   From plan.js it uses: renderPlan.
+ *   From plan.js it uses: renderPlan, renderUpperLanding (skipped if missing).
  *   Everything in this file sits inside one wrapper function (an "IIFE") so its
  *   helper names can never clash with names in calc.js or plan.js.
  *   The state keys and the result shape are described in docs/ARCHITECTURE.md.
@@ -44,6 +50,9 @@
  *     Code that handles both loops over BEAM_AXES below; to add a per-axis input,
  *     add beamX…/beamY… keys to DEFAULTS and matching ids in index.html.
  *   - Rename a state key: add old -> new to LEGACY_KEYS so saved values carry over.
+ *   - Orientation: always compare the NORMALISED value (normOrientation(o) ===
+ *     'U'), never the raw string or a prefix like 'U-'. Its display name comes
+ *     from ORIENTATION_LABELS (also used by the title strip and the Layout summary).
  *   - Change a default that old saves may still hold: saves are written as
  *     { ...state, schema: SAVE_SCHEMA }. Bump SAVE_SCHEMA and list the old values in
  *     OLD_DEFAULTS; loadState() drops them from older saves so the new default applies.
@@ -54,7 +63,9 @@
  *     shows in the heading while the section is collapsed. Keep it short, values only.
  *   - Section open/closed state: initSections() restores it from SECTIONS_KEY and
  *     saves it on every `toggle` event, as { 'sec-NAME': true|false }. New sections
- *     need no extra code; with nothing saved every section starts open.
+ *     need no extra code; with nothing saved every section starts open. The
+ *     "Collapse all / Expand all" button just sets every section's `open`; their
+ *     own `toggle` handlers save the state and refresh the button's label.
  */
 
 (function () {
@@ -116,6 +127,17 @@
     channelLengthOverride: 'beamXLengthOverride',
   };
 
+  /**
+   * Display name of each orientation (normalised value -> text). Used by the
+   * title strip and the Layout summary, e.g. "U-stair · 10 + 10 TR".
+   */
+  const ORIENTATION_LABELS = {
+    straight: 'Straight run',
+    inline: 'Straight with mid landing',
+    L: 'L-stair',
+    U: 'U-stair',
+  };
+
   /** Value of the extra "Custom…" option at the end of each section dropdown. */
   const CUSTOM = 'Custom';
 
@@ -145,6 +167,21 @@
     let d = 0;
     while (d < limit && Math.abs(Math.round(v * Math.pow(10, d)) - v * Math.pow(10, d)) > 1e-9) d++;
     return fmtNum(v, d);
+  }
+
+  /**
+   * Normalise an orientation to 'straight' | 'inline' | 'L' | 'U'. Uses calc.js's
+   * normalizeOrientation() when it exists; otherwise the same mapping locally:
+   * 'L-left'/'L-right' -> 'L', 'U-left'/'U-right' -> 'U', anything unknown -> 'U'.
+   * @param {*} o  orientation as saved, read or defaulted
+   * @returns {'straight'|'inline'|'L'|'U'}
+   */
+  function normOrientation(o) {
+    if (typeof normalizeOrientation === 'function') return normalizeOrientation(o);
+    const v = String(o);
+    if (v === 'straight' || v === 'inline' || v === 'L' || v === 'U') return v;
+    if (v.indexOf('L-') === 0) return 'L';
+    return 'U';
   }
 
   /**
@@ -215,6 +252,7 @@
    * Read every input whose id is a DEFAULTS key into a state object, with types:
    * checkboxes -> boolean, numbers -> parseFloat (fallback to DEFAULTS, never
    * negative; INT_KEYS rounded), selects/text -> string (stringersPerFlight -> int).
+   * `orientation` is always normalised ('straight' | 'inline' | 'L' | 'U').
    * @returns {object} state (lengths in inches; see docs/ARCHITECTURE.md §1)
    */
   function readState() {
@@ -236,33 +274,40 @@
         state[key] = String(el.value);
       }
     });
+    state.orientation = normOrientation(state.orientation);
     return state;
   }
 
   /**
    * Write a state object into the form. A select that has no option for the given
-   * value falls back to the DEFAULTS value.
+   * value falls back to the DEFAULTS value. The orientation (and its default) is
+   * normalised first, so an old value such as 'U-right' still selects "U-stair".
    * @param {object} state  values keyed like DEFAULTS
    */
   function writeState(state) {
     Object.keys(DEFAULTS).forEach(function (key) {
       const el = $(key);
       if (!el) return;
-      const value = key in state ? state[key] : DEFAULTS[key];
+      let value = key in state ? state[key] : DEFAULTS[key];
+      if (key === 'orientation') value = normOrientation(value);
       if (el.type === 'checkbox') {
         el.checked = !!value;
       } else {
         el.value = String(value);
-        if (el.tagName === 'SELECT' && el.value !== String(value)) el.value = String(DEFAULTS[key]);
+        if (el.tagName === 'SELECT' && el.value !== String(value)) {
+          el.value = String(key === 'orientation' ? normOrientation(DEFAULTS[key]) : DEFAULTS[key]);
+        }
       }
     });
   }
 
   /**
    * Copy values saved under old key names (LEGACY_KEYS) onto the current names,
-   * unless the current name is already saved. Returns a new object; the old keys
-   * are dropped.
+   * unless the current name is already saved, and map an old orientation value
+   * onto the new ones (normOrientation). Returns a new object; the old keys are
+   * dropped.
    *   { channelsPerLanding: 3 } -> { beamXCount: 3 }
+   *   { orientation: 'U-left' } -> { orientation: 'U' }
    * @param {object} saved  parsed localStorage value
    * @returns {{state: object, migrated: boolean}}
    */
@@ -276,6 +321,13 @@
       delete out[oldKey];
       migrated = true;
     });
+    if (typeof out.orientation === 'string') {
+      const o = normOrientation(out.orientation);
+      if (o !== out.orientation) {
+        out.orientation = o;
+        migrated = true;
+      }
+    }
     return { state: out, migrated: migrated };
   }
 
@@ -315,6 +367,7 @@
   function loadState() {
     const raw = storageGet(STORAGE_KEY) || storageGet(OLD_STORAGE_KEY);
     const state = Object.assign({}, DEFAULTS);
+    state.orientation = normOrientation(state.orientation);
     if (raw && typeof raw === 'object') {
       const m = migrateSaved(raw);
       const older = dropOldDefaults(m.state);
@@ -352,10 +405,10 @@
    * @param {object} state  current state
    */
   function updateVisibility(state) {
-    const isU = state.orientation.indexOf('U-') === 0;
+    const orientation = normOrientation(state.orientation);
     const toggles = {
-      'field-treads2': state.orientation !== 'straight',
-      'field-wellGap': isU,
+      'field-treads2': orientation !== 'straight',
+      'field-wellGap': orientation === 'U',
       'field-stringerCustomLbFt': state.stringerSection === CUSTOM,
     };
     BEAM_AXES.forEach(function (b) {
@@ -567,21 +620,25 @@
   }
 
   /**
-   * The chosen orientation's dropdown text, e.g. "U-stair, return right".
-   * @returns {string} '' when nothing is selected
+   * Display name of the state's orientation (normalised), e.g. "U-stair".
+   * @param {object} state  current state
+   * @returns {string}
    */
-  function orientationLabel() {
-    const select = $('orientation');
-    const opt = select ? select.options[select.selectedIndex] : null;
-    return opt ? opt.textContent : '';
+  function orientationLabel(state) {
+    return ORIENTATION_LABELS[normOrientation(state.orientation)] || '';
   }
 
   /**
-   * Update the drawing's title strip with the chosen orientation, e.g. "U-STAIR, RETURN RIGHT".
+   * Update the drawing's title strip with the orientation and, with 2+ landings,
+   * the landing count, e.g. "U-STAIR" or "U-STAIR · 2 LANDINGS" (CSS uppercases).
+   * @param {object} state  current state
    */
-  function updateTitleBlock() {
+  function updateTitleBlock(state) {
     const cell = $('tbOrientation');
-    if (cell) cell.textContent = orientationLabel();
+    if (!cell) return;
+    let text = orientationLabel(state);
+    if (state.landingCount >= 2) text += ' · ' + fmtNum(state.landingCount) + ' landings';
+    cell.textContent = text;
   }
 
   /* ---------------------------------------------------------------------
@@ -606,12 +663,12 @@
    * To add a section, add an entry here (see HOW TO EDIT at the top).
    */
   const SECTION_SUMMARIES = {
-    // "U-stair, return right · 10 + 10 TR"   /   "Straight run · 12 TR"
+    // "U-stair · 10 + 10 TR"   /   "Straight run · 12 TR"
     layout: function (s) {
-      const treads = s.orientation === 'straight'
+      const treads = normOrientation(s.orientation) === 'straight'
         ? fmtNum(s.treads1)
         : fmtNum(s.treads1) + ' + ' + fmtNum(s.treads2);
-      return orientationLabel() + ' · ' + treads + ' TR';
+      return orientationLabel(s) + ' · ' + treads + ' TR';
     },
     // "C12x20.7 × 2 / flight"
     stringers: function (s) {
@@ -666,6 +723,9 @@
    * Restore each <details class="section">'s open/closed state from SECTIONS_KEY
    * (sections not saved stay open), then save the state of all sections, as
    * { 'sec-NAME': bool }, whenever one is opened or closed (`toggle` event).
+   * Also wires #toggleAllBtn: if any section is open it closes them all, otherwise
+   * it opens them all. Its label reads "Collapse all" while any section is open,
+   * otherwise "Expand all", refreshed on load and on every section `toggle`.
    */
   function initSections() {
     const sections = Array.prototype.slice.call(document.querySelectorAll('details.section'));
@@ -676,18 +736,39 @@
       });
     }
 
+    const btn = $('toggleAllBtn');
+    function anyOpen() {
+      return sections.some(function (d) { return d.open; });
+    }
+    function syncButton() {
+      if (btn) btn.textContent = anyOpen() ? 'Collapse all' : 'Expand all';
+    }
+
+    // Saves the whole { id: open } map, so several toggles in a row (the
+    // Collapse/Expand all button) just rewrite the same final value.
     function save() {
       const open = {};
       sections.forEach(function (d) { if (d.id) open[d.id] = d.open; });
       storageSet(SECTIONS_KEY, open);
+      syncButton();
     }
     // `toggle` does not bubble, so listen on each section.
     sections.forEach(function (d) { d.addEventListener('toggle', save); });
+
+    if (btn) {
+      btn.addEventListener('click', function () {
+        const open = !anyOpen();
+        // Each change fires that section's `toggle` (async), which saves.
+        sections.forEach(function (d) { d.open = open; });
+        syncButton();
+      });
+    }
+    syncButton();
   }
 
   /**
    * The main loop: form -> state -> visibility -> estimate -> table -> plan ->
-   * section summaries -> save.
+   * upper-landing view (2+ landings) -> title strip -> section summaries -> save.
    * Runs on every input/change event.
    */
   function update() {
@@ -704,7 +785,17 @@
       console.error('renderPlan failed:', e);
     }
 
-    updateTitleBlock();
+    // Upper-landing view: only with 2+ landings. Shown before drawing so the svg
+    // is laid out; skipped quietly if plan.js has no renderUpperLanding().
+    const upperWrap = $('planUpperWrap');
+    if (upperWrap) upperWrap.hidden = !(state.landingCount >= 2);
+    try {
+      if (typeof renderUpperLanding === 'function') renderUpperLanding($('planUpper'), state);
+    } catch (e) {
+      console.error('renderUpperLanding failed:', e);
+    }
+
+    updateTitleBlock(state);
     updateSectionSummaries(state);
     saveState(state);
   }

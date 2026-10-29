@@ -15,10 +15,11 @@
  *
  * HOW IT FITS WITH THE OTHER FILES
  *   index.html loads three classic scripts, in this order:
- *     1. js/calc.js  (this file)  — SECTIONS, DEFAULTS, computeEstimate(), fmtFtIn() ...
+ *     1. js/calc.js  (this file)  — SECTIONS, DEFAULTS, normalizeOrientation(),
+ *                                  computeEstimate(), fmtFtIn() ...
  *     2. js/plan.js              — renderPlan(svg, state) draws the plan view; it uses
- *                                  landingWidth(), landingBeamLength() and fmtFtIn()
- *                                  from this file.
+ *                                  normalizeOrientation(), landingWidth(),
+ *                                  landingBeamLength() and fmtFtIn() from this file.
  *     3. js/app.js               — reads the form into a `state` object, calls
  *                                  computeEstimate(state) and renderPlan(svg, state),
  *                                  and fills the estimate table.
@@ -38,6 +39,14 @@
  *       Y beams (beamY... keys) run ALONG the stair (flight 1's direction of travel);
  *       auto length = landingDepth.
  *     landingBeamLength(state, 'x' | 'y') gives the length of one beam on either axis.
+ *   - Orientations: 'straight', 'inline', 'L' and 'U' (default 'U'). There are no
+ *     left/right variants: an L always turns right and a U always returns on the right.
+ *     Old saved values ('L-left', 'L-right', 'U-left', 'U-right') are mapped to 'L' / 'U'
+ *     by normalizeOrientation(); always normalise before comparing an orientation.
+ *   - Add an orientation:
+ *       1. add it to normalizeOrientation() below (and an <option> in index.html),
+ *       2. handle it in landingWidth() and in the flight count in stairCounts(),
+ *       3. add a layout branch in js/plan.js.
  *   - Change the default values or example rates: edit DEFAULTS below. These are the
  *     values the page starts with and the "Reset" button goes back to.
  *   - The default labour hours are not typed into DEFAULTS: they are worked out once
@@ -100,7 +109,7 @@ const FINISHES = [
  */
 const DEFAULTS = {
   // Layout
-  orientation: 'U-right',      // 'straight', 'inline', 'L-left', 'L-right', 'U-left', 'U-right'
+  orientation: 'U',            // 'straight', 'inline', 'L' or 'U' (see normalizeOrientation)
   treads1: 10,                 // treads in flight 1 (bottom flight)
   treads2: 10,                 // treads in flight 2 (ignored for 'straight')
   treadDepth: 11,              // in, going / run per tread
@@ -196,6 +205,25 @@ function sectionWeight(name, customLbFt) {
 }
 
 /**
+ * Clean up an orientation value to one of the four layouts.
+ *   'straight', 'inline', 'L', 'U'  -> unchanged
+ *   'L-left', 'L-right'              -> 'L'   (old saved values; L always turns right now)
+ *   'U-left', 'U-right'              -> 'U'   (old saved values; U always returns on the right)
+ *   anything else (undefined, junk)  -> 'U'   (the default layout)
+ * Case and surrounding spaces are ignored, so ' u-Left ' gives 'U'.
+ *
+ * @param {*} o  an orientation from the form, the state or an old save
+ * @returns {string} 'straight' | 'inline' | 'L' | 'U'
+ */
+function normalizeOrientation(o) {
+  const v = String(o == null ? '' : o).trim().toLowerCase();
+  if (v === 'straight') return 'straight';
+  if (v === 'inline') return 'inline';
+  if (v === 'l' || v === 'l-left' || v === 'l-right') return 'L';
+  return 'U'; // 'u', 'u-left', 'u-right' and anything unknown
+}
+
+/**
  * Width of the landing across flight 1's direction of travel. This is also the
  * automatic X landing-beam length, because the X beams run across the landing.
  *
@@ -205,7 +233,7 @@ function sectionWeight(name, customLbFt) {
 function landingWidth(state) {
   const s = state || {};
   const width = calcNum(s.stairWidth);
-  if (String(s.orientation).indexOf('U-') === 0) {
+  if (normalizeOrientation(s.orientation) === 'U') {
     // U-stair: the landing spans both flights side by side plus the well gap between them.
     return 2 * width + calcNum(s.wellGap);
   }
@@ -248,7 +276,7 @@ function landingBeamLength(state, axis) {
 function stairCounts(state) {
   const s = state || {};
   // A straight stair is one flight to a top landing; every other layout has two flights.
-  const flightCount = String(s.orientation || '') === 'straight' ? 1 : 2;
+  const flightCount = normalizeOrientation(s.orientation) === 'straight' ? 1 : 2;
   const treadCounts = flightCount === 1 ? [calcInt(s.treads1)] : [calcInt(s.treads1), calcInt(s.treads2)];
   const stringersPerFlight = calcInt(s.stringersPerFlight);
   const landingCount = calcInt(s.landingCount);
@@ -312,7 +340,7 @@ function computeEstimate(state) {
   const warnings = [];
 
   // ---- Inputs, cleaned up ----
-  const orientation = String(s.orientation || '');
+  const orientation = normalizeOrientation(s.orientation); // 'straight' | 'inline' | 'L' | 'U'
   const treadDepth = calcNum(s.treadDepth);
   const riserHeight = calcNum(s.riserHeight);
   const stairWidth = calcNum(s.stairWidth);
@@ -430,7 +458,7 @@ function computeEstimate(state) {
   });
   // On an L-stair flight 2 leaves the side of the landing, so the landing must be at
   // least as deep as the stair is wide or flight 2 will not fit.
-  if (orientation.indexOf('L-') === 0 && landingDepth < stairWidth) {
+  if (orientation === 'L' && landingDepth < stairWidth) {
     warnings.push('Landing depth is less than the stair width — flight 2 of an L-stair needs a landing at least as deep as the stair is wide.');
   }
   // A 0 lb/ft section silently drops that steel from the price. Landing beams only
@@ -520,4 +548,4 @@ function fmtNum(n, decimals = 0) {
   return text.replace(/^-(?=0(\.0+)?$)/, ''); // never show "-0"
 }
 
-if (typeof module !== 'undefined') module.exports = { SECTIONS, FINISHES, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };
+if (typeof module !== 'undefined') module.exports = { SECTIONS, FINISHES, DEFAULTS, normalizeOrientation, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };

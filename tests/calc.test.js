@@ -9,7 +9,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  SECTIONS, FINISHES, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate,
+  SECTIONS, FINISHES, DEFAULTS, normalizeOrientation, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate,
   fmtFtIn, fmtMoney, fmtNum,
 } = require('../js/calc.js');
 
@@ -50,7 +50,7 @@ test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
   const strLen = Math.sqrt(run * run + rise * rise) + 12;
   const stringerFt = (strLen * 2 * 2) / 12;   // 2 flights x 2 stringers
   const stringerLb = stringerFt * 20.7;       // C12x20.7
-  const xEach = 2 * 44 + 4;                   // X beams: U-right landing width = 92"
+  const xEach = 2 * 44 + 4;                   // X beams: U landing width = 92"
   const xFt = (1 * 2 * xEach) / 12;           // 1 landing x 2 X beams
   const xLb = xFt * 11.2;                     // C8x11.2
   const yEach = 48;                           // Y beams: landing depth = 48"
@@ -96,6 +96,7 @@ test('full cost roll-up on DEFAULTS matches a hand calculation', () => {
 });
 
 test('DEFAULTS: new cost keys and example rates', () => {
+  assert.equal(DEFAULTS.orientation, 'U');
   assert.equal(DEFAULTS.labourHours, 52);
   assert.equal(DEFAULTS.labourHours, standardLabourHours(DEFAULTS));
   assert.equal(DEFAULTS.shopRate, 100);
@@ -120,7 +121,7 @@ test('standardLabourHours: straight stair, 4 stringers, 12 treads, 1 landing of 
 
 test('standardLabourHours: L-stair with 2 landings counts both flights and both landings', () => {
   const st = {
-    ...DEFAULTS, orientation: 'L-left', stringersPerFlight: 2, treads1: 8, treads2: 6,
+    ...DEFAULTS, orientation: 'L', stringersPerFlight: 2, treads1: 8, treads2: 6,
     landingCount: 2, beamXCount: 2, beamYCount: 1,
   };
   // 2 flights x 2 stringers, 8 + 6 treads, 2 landings x (2 + 1) beams
@@ -178,16 +179,53 @@ test("'straight' has 1 flight and ignores treads2; other orientations have 2", (
   assert.equal(r.flights.length, 1);
   assert.equal(r.totalTreads, 12);
   assert.equal(r.stringers.count, 2);
-  for (const o of ['inline', 'L-left', 'L-right', 'U-left', 'U-right']) {
+  for (const o of ['inline', 'L', 'U']) {
     assert.equal(computeEstimate({ ...DEFAULTS, orientation: o }).flights.length, 2, o);
   }
 });
 
 test('landingWidth: U-stairs = 2 x width + gap, others = width', () => {
-  assert.equal(landingWidth({ orientation: 'U-left', stairWidth: 44, wellGap: 4 }), 92);
-  assert.equal(landingWidth({ orientation: 'U-right', stairWidth: 36, wellGap: 6 }), 78);
-  assert.equal(landingWidth({ orientation: 'L-left', stairWidth: 44, wellGap: 4 }), 44);
+  assert.equal(landingWidth({ orientation: 'U', stairWidth: 44, wellGap: 4 }), 92);
+  assert.equal(landingWidth({ orientation: 'U', stairWidth: 36, wellGap: 6 }), 78);
+  assert.equal(landingWidth({ orientation: 'L', stairWidth: 44, wellGap: 4 }), 44);
+  assert.equal(landingWidth({ orientation: 'inline', stairWidth: 44, wellGap: 4 }), 44);
   assert.equal(landingWidth({ orientation: 'straight', stairWidth: 44, wellGap: 4 }), 44);
+  // No orientation at all counts as the default 'U'.
+  assert.equal(landingWidth({ stairWidth: 44, wellGap: 4 }), 92);
+});
+
+test('normalizeOrientation: old left/right values, new values, junk', () => {
+  // Old saved values map onto the single L / U layouts.
+  assert.equal(normalizeOrientation('L-left'), 'L');
+  assert.equal(normalizeOrientation('L-right'), 'L');
+  assert.equal(normalizeOrientation('U-left'), 'U');
+  assert.equal(normalizeOrientation('U-right'), 'U');
+  // The four current values pass through.
+  for (const o of ['straight', 'inline', 'L', 'U']) assert.equal(normalizeOrientation(o), o);
+  // Case and surrounding spaces are ignored.
+  assert.equal(normalizeOrientation(' l-RIGHT '), 'L');
+  assert.equal(normalizeOrientation('u'), 'U');
+  assert.equal(normalizeOrientation('l'), 'L');
+  assert.equal(normalizeOrientation('Straight'), 'straight');
+  assert.equal(normalizeOrientation(' INLINE\t'), 'inline');
+  // Anything unknown falls back to the default 'U'.
+  for (const o of [undefined, null, '', '   ', 'junk', 'L-up', 'straightish', 42, NaN, {}, []]) {
+    assert.equal(normalizeOrientation(o), 'U', String(o));
+  }
+  assert.equal(normalizeOrientation(), 'U');
+});
+
+test("old orientations give the same numbers as the new ones ('U-left' = 'U', 'L-right' = 'L')", () => {
+  for (const [oldO, newO] of [['U-left', 'U'], ['U-right', 'U'], ['L-right', 'L'], ['L-left', 'L']]) {
+    for (const extra of [{}, { landingCount: 2, deckRatePerSqFt: 12, finishRatePerFt: 2.5 }, { landingDepth: 30 }]) {
+      const st = { ...DEFAULTS, ...extra };
+      assert.equal(landingWidth({ ...st, orientation: oldO }), landingWidth({ ...st, orientation: newO }), oldO);
+      assert.deepEqual(computeEstimate({ ...st, orientation: oldO }), computeEstimate({ ...st, orientation: newO }), oldO);
+      assert.equal(standardLabourHours({ ...st, orientation: oldO }), standardLabourHours({ ...st, orientation: newO }), oldO);
+    }
+  }
+  // And U really differs from L (so the comparison above is not trivially equal).
+  assert.notEqual(landingWidth({ ...DEFAULTS, orientation: 'U' }), landingWidth({ ...DEFAULTS, orientation: 'L' }));
 });
 
 test('sectionWeight: table values and Custom', () => {
@@ -215,9 +253,9 @@ test('SECTIONS rows are well formed', () => {
   }
 });
 
-test('landing beam hand check: U-right 44" + 4" gap, 48" deep, 2 X + 2 Y C8x11.2', () => {
+test('landing beam hand check: U 44" + 4" gap, 48" deep, 2 X + 2 Y C8x11.2', () => {
   const r = computeEstimate({
-    ...DEFAULTS, orientation: 'U-right', stairWidth: 44, wellGap: 4, landingDepth: 48,
+    ...DEFAULTS, orientation: 'U', stairWidth: 44, wellGap: 4, landingDepth: 48,
     landingCount: 1, beamXCount: 2, beamYCount: 2, beamXSection: 'C8x11.2', beamYSection: 'C8x11.2',
   });
   // X: 2 x 92" = 184" = 15.333 ft x 11.2 = 171.73 lb
@@ -317,10 +355,10 @@ test('landingCount 2 doubles both beam counts and weights', () => {
 });
 
 test('landingBeamLength: x and y, auto and override', () => {
-  const st = { ...DEFAULTS, orientation: 'U-right', stairWidth: 44, wellGap: 4, landingDepth: 48 };
+  const st = { ...DEFAULTS, orientation: 'U', stairWidth: 44, wellGap: 4, landingDepth: 48 };
   assert.equal(landingBeamLength(st, 'x'), 92);                // auto X = landingWidth
   assert.equal(landingBeamLength(st, 'y'), 48);                // auto Y = landingDepth
-  assert.equal(landingBeamLength({ ...st, orientation: 'L-left' }, 'x'), 44);
+  assert.equal(landingBeamLength({ ...st, orientation: 'L' }, 'x'), 44);
   assert.equal(landingBeamLength({ ...st, beamXLengthAuto: false, beamXLengthOverride: 50 }, 'x'), 50);
   assert.equal(landingBeamLength({ ...st, beamYLengthAuto: false, beamYLengthOverride: 40 }, 'y'), 40);
   // One axis's override does not touch the other.
@@ -341,10 +379,13 @@ test('warnings', () => {
   assert.ok(steep.warnings.some((w) => w.startsWith('Tread depth under')));
   const empty = computeEstimate({ ...DEFAULTS, treads1: 0 });
   assert.ok(empty.warnings.includes('Flight 1 has no treads.'));
-  const shortL = computeEstimate({ ...DEFAULTS, orientation: 'L-right', landingDepth: 36, stairWidth: 44 });
+  const shortL = computeEstimate({ ...DEFAULTS, orientation: 'L', landingDepth: 36, stairWidth: 44 });
   assert.ok(shortL.warnings.some((w) => w.startsWith('Landing depth')));
-  const shortU = computeEstimate({ ...DEFAULTS, orientation: 'U-right', landingDepth: 36, stairWidth: 44 });
+  const shortU = computeEstimate({ ...DEFAULTS, orientation: 'U', landingDepth: 36, stairWidth: 44 });
   assert.ok(!shortU.warnings.some((w) => w.startsWith('Landing depth')));
+  // An old saved 'L-left' still gets the L-stair landing-depth check.
+  const shortOldL = computeEstimate({ ...DEFAULTS, orientation: 'L-left', landingDepth: 36, stairWidth: 44 });
+  assert.ok(shortOldL.warnings.some((w) => w.startsWith('Landing depth')));
 });
 
 test('garbage input never produces NaN', () => {
@@ -352,7 +393,7 @@ test('garbage input never produces NaN', () => {
   for (const k of Object.keys(DEFAULTS)) garbage[k] = '';
   const r1 = computeEstimate(garbage);
   assertAllFinite(r1);
-  assert.equal(r1.flights.length, 2); // '' is not 'straight'
+  assert.equal(r1.flights.length, 2); // '' normalises to the default 'U'
   assert.equal(r1.costs.total, 0);
 
   assertAllFinite(computeEstimate({}));
@@ -450,7 +491,7 @@ test('finish: $/ft over stringers + landing beams only (treads excluded)', () =>
 test('landing deck: $/sq.ft over every landing, taxed with materials', () => {
   assert.equal(DEFAULTS.deckRatePerSqFt, 0);
   const zero = computeEstimate(DEFAULTS);
-  near(zero.deck.sqFt, (92 * 48) / 144, 1e-9);        // U-right: 2 x 44 + 4 wide, 48 deep = 30.67 sq.ft
+  near(zero.deck.sqFt, (92 * 48) / 144, 1e-9);        // U: 2 x 44 + 4 wide, 48 deep = 30.67 sq.ft
   assert.equal(zero.costs.deck, 0);
 
   const r = computeEstimate({ ...DEFAULTS, deckRatePerSqFt: 12 });
@@ -458,7 +499,7 @@ test('landing deck: $/sq.ft over every landing, taxed with materials', () => {
   near(r.costs.subtotal - zero.costs.subtotal, 368, 0.011);
   near(r.costs.pst - zero.costs.pst, 368 * 0.07, 0.011);  // deck is a material: PST applies
 
-  const L = computeEstimate({ ...DEFAULTS, orientation: 'L-right', deckRatePerSqFt: 1 });
+  const L = computeEstimate({ ...DEFAULTS, orientation: 'L', deckRatePerSqFt: 1 });
   near(L.deck.sqFt, (44 * 48) / 144, 1e-9);
   const two = computeEstimate({ ...DEFAULTS, landingCount: 2 });
   near(two.deck.sqFt, 2 * zero.deck.sqFt, 1e-9);

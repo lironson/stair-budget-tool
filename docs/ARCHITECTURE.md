@@ -37,7 +37,7 @@ All lengths inside `state` and inside the calculations are **inches**. Weights a
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `orientation` | string | `'U-right'` | one of `'straight'`, `'inline'`, `'L-left'`, `'L-right'`, `'U-left'`, `'U-right'` (see §4) |
+| `orientation` | string | `'U'` | one of `'straight'`, `'inline'`, `'L'`, `'U'` (see §3). Turn direction doesn't matter: L always turns right, U always returns on the right. Old saved values `'L-left'`/`'L-right'`/`'U-left'`/`'U-right'` are mapped by `normalizeOrientation()` |
 | `treads1` | int | `10` | treads in flight 1 (the bottom flight) |
 | `treads2` | int | `10` | treads in flight 2. Ignored when `orientation === 'straight'` |
 | `treadDepth` | number (in) | `11` | going / run per tread |
@@ -89,6 +89,9 @@ names in localStorage.
 const SECTIONS = [ { name: 'C12x20.7', lbft: 20.7, depth: 12 }, ... ];  // depth in inches
 const DEFAULTS = { ...the table above... };
 function sectionWeight(name, customLbFt)   // -> lb/ft number ('Custom' returns customLbFt)
+function normalizeOrientation(o)          // -> 'straight' | 'inline' | 'L' | 'U'. 'L-left'/'L-right' -> 'L',
+                                           //   'U-left'/'U-right' -> 'U', anything unknown -> 'U'.
+                                           //   calc.js, plan.js and app.js always normalise before use.
 function landingWidth(state)               // -> inches, landing size across the stair = auto X beam length (§3)
 function landingBeamLength(state, axis)    // axis 'x' | 'y' -> inches, length of ONE beam on that axis,
                                            //   honouring beamXLengthAuto/Override or beamYLengthAuto/Override
@@ -103,7 +106,7 @@ function fmtNum(n, decimals = 0)           // 1234.5 -> "1,235"
 ```
 
 The file ends with
-`if (typeof module !== 'undefined') module.exports = { SECTIONS, DEFAULTS, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };`
+`if (typeof module !== 'undefined') module.exports = { SECTIONS, FINISHES, DEFAULTS, normalizeOrientation, sectionWeight, landingWidth, landingBeamLength, standardLabourHours, computeEstimate, fmtFtIn, fmtMoney, fmtNum };`
 so Node tests can `require` it.
 
 `SECTIONS` (AISC lb/ft): C6x8.2, C6x10.5, C7x9.8, C7x12.25, C8x11.2, C8x11.5,
@@ -155,11 +158,12 @@ Plan coordinates are inches. Flight 1 starts at the bottom and goes **up** the s
 
 * **straight**: flight 1, then a top landing (`landingDepth` deep, `stairWidth` wide).
 * **inline**: flight 1, then the landing, then flight 2 carrying on in the same direction.
-* **L-left / L-right**: flight 1, then the landing (`landingDepth` × `stairWidth`). Flight 2
-  leaves the landing's left/right side, turned 90°, flush with the far edge of the landing.
-* **U-left / U-right**: flight 1, then the landing across the full width
-  (`2 × stairWidth + wellGap`), then flight 2 coming back down parallel to flight 1 on the
-  left/right side of it, with the `wellGap` between them.
+* **L**: flight 1, then the landing (`landingDepth` × `stairWidth`). Flight 2 leaves the
+  landing's **right** side, turned 90°, flush with the far edge of the landing.
+* **U**: flight 1, then the landing across the full width (`2 × stairWidth + wellGap`), then
+  flight 2 coming back down parallel to flight 1 on its **right**, with the `wellGap` between.
+
+(The direction is fixed; there are no left/right variants any more.)
 
 `landingWidth(state)` = `2 × stairWidth + wellGap` for U-stairs, otherwise `stairWidth`.
 **X beams** run **across** flight 1's direction of travel (horizontal in the plan), each
@@ -173,10 +177,30 @@ as in PDF example 5. X beams are drawn first, Y beams on top.
 
 A small axis key ("X →", "Y ↑") on the drawing ties the beams to the input names.
 
+### Upper landing (landingCount ≥ 2)
+
+A second drawing in its own svg shows the **upper landing**: the landing at the top of the
+last flight (flight 1 for `straight`, flight 2 otherwise). It is the same size as landing 1
+(`landingWidth` × `landingDepth`) with the same X / Y beams, deck symbol, labels
+(`{SECTION} @ LANDING LEVEL`) and width/depth dimensions. The arriving flight is shown only
+as its **last 3 treads** (fewer if the flight is shorter) with its stringers and an UP
+arrow, cut off with a zig-zag **break line** on the free end, as on the PDF's upper-landing
+sheets. Placement:
+
+* **straight / inline**: the landing sits above the top end of the arriving flight.
+* **L**: the arriving flight 2 runs to the right; the landing is beyond its right end,
+  flight 2 meeting the landing's left edge, flush with the landing's far (top) edge.
+* **U**: the arriving flight 2 runs down the screen on the right; the landing is below its
+  end and spans the full landing width, flight 2 meeting the right half of its top edge.
+
+Title: `2 | UPPER LANDING FRAMING PLAN` (the main drawing is `1 | STAIR FRAMING PLAN`).
+
 ## 4. `plan.js`
 
 ```js
-function renderPlan(svgEl, state)   // clears svgEl, sets its viewBox, draws everything
+function renderPlan(svgEl, state)          // clears svgEl, sets its viewBox, draws everything
+function renderUpperLanding(svgEl, state)  // second view (§3 "Upper landing"); clears svgEl and
+                                           //   draws nothing when landingCount < 2. Never throws.
 ```
 
 * Draws in inch units and sets `viewBox` to the drawing's bounding box plus margin for
@@ -206,6 +230,9 @@ Other ids:
 | id | element | used for |
 |---|---|---|
 | `plan` | `<svg>` | `renderPlan` target |
+| `planUpperWrap` | element | holds the upper-landing view; `hidden` when `landingCount < 2`. Sits to the right of `#plan` inside the plan sheet (about 62 / 38), stacked under 600px wide; side by side in print |
+| `planUpper` | `<svg>` | `renderUpperLanding` target |
+| `toggleAllBtn` | `<button>` | above the first input section: "Collapse all" while any section is open, otherwise "Expand all"; sets every `details.section` `open` (their `toggle` handlers save the state) |
 | `results` | `<tbody>` | estimate breakdown rows, filled by `app.js` |
 | `grandTotal` | element | big total figure |
 | `summary` | element | one line: flights, total treads/risers, total rise |
@@ -222,7 +249,7 @@ heading. Order and ids:
 
 | id | heading | collapsed summary (`<span class="section-sum" id="sum-…">`, filled by `app.js`) |
 |---|---|---|
-| `sec-layout` | Layout | orientation · treads, e.g. `U-stair, return right · 10 + 10 TR` |
+| `sec-layout` | Layout | orientation · treads, e.g. `U-stair · 10 + 10 TR` |
 | `sec-stringers` | Stringers | e.g. `C12x20.7 × 2 / flight` |
 | `sec-landings` | Landings | e.g. `1 landing · X 2 × C8x11.2 · Y 2 × C8x11.2` |
 | `sec-material` | Material pricing | e.g. `$85.00 / tread · $1.60 / lb` |

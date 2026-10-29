@@ -10,8 +10,9 @@ and works out material and labour cost as you type.
 
 ## What it does
 
-- **Layouts**: straight run, straight with mid landing, L-stair (90° turn, left or right),
-  U-stair (180° return, left or right). These are modelled on typical stair framing plans.
+- **Layouts**: straight run, straight with mid landing, L-stair (90° turn) and U-stair
+  (180° return). These are modelled on typical stair framing plans; the turn direction
+  doesn't change the price, so each is drawn one way.
 - **Stringers**: choose any C or MC channel (or enter a custom lb/ft), with 2 outer cranked
   stringers or 4 (2 cranked + 2 inner).
 - **Landings**: price landing beams in both directions. **X beams** run across the stair
@@ -30,12 +31,13 @@ and works out material and labour cost as you type.
 - **Freight**: one lump-sum line.
 - **Markup**: an optional % on the subtotal (0% to start).
 - **PST**: 7% (BC) on materials only, meaning the steel, treads and landing deck. GST is not included.
-- **Collapsible sections**: each input group folds away and shows a one-line summary. Your
-  browser remembers which ones you left open.
+- **Collapsible sections**: each input group folds away and shows a one-line summary, with
+  a *Collapse all / Expand all* button. Your browser remembers which ones you left open.
 - **One-page print**: *Print estimate* gives a single Letter page with the plan and the
   cost breakdown.
-- **Live plan view** in drawing style: stringers, landing channels, tread lines, UP arrows
-  and dimension strings, all redrawn on every change.
+- **Live plan view** in drawing style: stringers, landing beams, tread lines, UP arrows
+  and dimension strings, all redrawn on every change. With 2 or more landings, a second
+  view shows the upper landing with the flight arriving into it.
 - Your last inputs and rates are remembered in the browser (localStorage).
 
 > The rates that ship with the page are **example values**. Replace them with your own.
